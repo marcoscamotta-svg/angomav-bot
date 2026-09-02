@@ -74,14 +74,22 @@ async def run_trading_bot():
     api = MetaApi(TOKEN)
     account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
     
-    print("Conectando à conta MetaTrader ativa via RPC...")
+    print("Verificando deploy da conta no MetaApi...")
+    try:
+        if account.state != 'DEPLOYED':
+            print("Garantindo deploy da conta...")
+            await account.deploy()
+    except Exception as e:
+        print(f"Aviso no status de deploy: {e}")
+
+    print("Aguardando conexão ativa com o servidor MetaTrader...")
+    await account.wait_connected()
     
-    # Conecta diretamente à conta sem chamar deploy()
     connection = account.get_rpc_connection()
     await connection.connect()
     await connection.wait_synchronized()
     
-    print("Robô ativo! Monitorizando ativos...")
+    print("Robô ativo e sincronizado! Monitorizando ativos...")
 
     while True:
         try:
@@ -94,7 +102,6 @@ async def run_trading_bot():
                 fvg = detect_fvg(candles)
                 ob = detect_order_block(candles)
 
-                # Regra de Entrada: Confluência entre OB + FVG
                 if fvg and ob:
                     if fvg['type'] == "BULLISH_FVG" and ob['type'] == "BULLISH_OB":
                         sl_price = ob['low']
@@ -119,7 +126,7 @@ async def run_trading_bot():
             await asyncio.sleep(60)
 
         except Exception as e:
-            print(f"Erro no ciclo do robô: {e}")
+            print(f"Erro durante o ciclo de análise: {e}")
             await asyncio.sleep(10)
 
 if __name__ == "__main__":
