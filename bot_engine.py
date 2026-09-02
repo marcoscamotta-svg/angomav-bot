@@ -13,6 +13,16 @@ RISK_PERCENTAGE = 0.005  # 0.5% de risco por trade
 SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "XAUUSD", "BTCUSD"]
 TIMEFRAME = "1h"  # Timeframe base para OB e FVG
 
+# Dicionário global para exportar dados para o Dashboard Web (sem interferir no bot)
+bot_status = {
+    "connected": False,
+    "last_update": "A iniciar...",
+    "symbols": SYMBOLS,
+    "equity": 0,
+    "balance": 0,
+    "last_signals": []
+}
+
 
 def calculate_lot_size(account_equity, sl_pips, pip_value=10):
     """Calcula o tamanho do lote para arriscar exatamente 0.5% da conta."""
@@ -86,17 +96,20 @@ async def run_trading_bot():
         await connection.wait_synchronized()
 
         print("Robô ativo e sincronizado! Monitorizando ativos...")
+        bot_status["connected"] = True
 
         while True:
             try:
                 account_information = await connection.get_account_information()
-                equity = account_information.get('equity', 1000)
+                bot_status["equity"] = account_information.get('equity', 0)
+                bot_status["balance"] = account_information.get('balance', 0)
             except Exception as e:
                 print(f"Erro ao obter informações da conta: {e}")
 
+            bot_status["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
             for symbol in SYMBOLS:
                 try:
-                    # Método correto de busca de histórico usando o objeto account
                     start_time = datetime.utcnow() - timedelta(days=5)
                     candles = await account.get_historical_candles(symbol, TIMEFRAME, start_time, 100)
 
@@ -107,22 +120,27 @@ async def run_trading_bot():
                     ob = detect_order_block(candles)
 
                     if fvg and ob:
+                        signal_info = None
                         if fvg['type'] == "BULLISH_FVG" and ob['type'] == "BULLISH_OB":
                             print(f"[{datetime.now()}] CONFLUÊNCIA DE COMPRA ENCONTRADA em {symbol}!")
-                            print(f"FVG: {fvg} | OB: {ob}")
+                            signal_info = f"BUY {symbol} - OB + FVG Confluência"
 
                         elif fvg['type'] == "BEARISH_FVG" and ob['type'] == "BEARISH_OB":
                             print(f"[{datetime.now()}] CONFLUÊNCIA DE VENDA ENCONTRADA em {symbol}!")
-                            print(f"FVG: {fvg} | OB: {ob}")
+                            signal_info = f"SELL {symbol} - OB + FVG Confluência"
+
+                        if signal_info and signal_info not in bot_status["last_signals"]:
+                            bot_status["last_signals"].insert(0, f"[{datetime.now().strftime('%H:%M')}] {signal_info}")
+                            bot_status["last_signals"] = bot_status["last_signals"][:10]  # Guarda os últimos 10
 
                 except Exception as e:
                     print(f"Erro ao analisar o símbolo {symbol}: {e}")
 
-            # Intervalo de verificação a cada 60 segundos
             await asyncio.sleep(60)
 
     except Exception as e:
         print(f"Erro na execução do robô: {e}")
+        bot_status["connected"] = False
 
 
 if __name__ == "__main__":
