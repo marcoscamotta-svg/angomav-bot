@@ -88,14 +88,17 @@ async def run_trading_bot():
         print("Robô ativo e sincronizado! Monitorizando ativos...")
 
         while True:
-            account_information = await connection.get_account_information()
-            equity = account_information.get('equity', 1000)
+            try:
+                account_information = await connection.get_account_information()
+                equity = account_information.get('equity', 1000)
+            except Exception as e:
+                print(f"Erro ao obter informações da conta: {e}")
 
             for symbol in SYMBOLS:
                 try:
-                    # Método corrigido para buscar histórico no SDK do MetaApi
+                    # Método correto de busca de histórico usando o objeto account
                     start_time = datetime.utcnow() - timedelta(days=5)
-                    candles = await connection.get_candles(symbol, TIMEFRAME, start_time, 100)
+                    candles = await account.get_historical_candles(symbol, TIMEFRAME, start_time, 100)
 
                     if not candles or len(candles) < 5:
                         continue
