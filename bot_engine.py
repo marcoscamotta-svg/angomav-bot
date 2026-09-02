@@ -22,7 +22,6 @@ def calculate_lot_size(account_equity, sl_pips, pip_value=10):
         return 0.01
     
     lot = risk_amount / (sl_pips * pip_value)
-    # Arredonda para 2 casas decimais e garante o lote mínimo
     lot = round(max(0.01, lot), 2)
     return lot
 
@@ -30,20 +29,19 @@ def calculate_lot_size(account_equity, sl_pips, pip_value=10):
 def detect_fvg(candles):
     """
     Deteta Fair Value Gap (FVG) de Compra (Bullish) ou Venda (Bearish).
-    Necessita de pelo menos 3 velas.
     """
     if len(candles) < 3:
         return None
 
     c1, c2, c3 = candles[-3], candles[-2], candles[-1]
 
-    # Bullish FVG: Mínima da Vela 3 maior que a Máxima da Vela 1
+    # Bullish FVG
     if c3['high'] > c1['low'] and c2['close'] > c1['high']:
         gap_size = c3['low'] - c1['high']
         if gap_size > 0:
             return {"type": "BULLISH_FVG", "top": c3['low'], "bottom": c1['high']}
 
-    # Bearish FVG: Máxima da Vela 3 menor que a Mínima da Vela 1
+    # Bearish FVG
     if c3['low'] < c1['high'] and c2['close'] < c1['low']:
         gap_size = c1['low'] - c3['high']
         if gap_size > 0:
@@ -61,11 +59,11 @@ def detect_order_block(candles):
 
     c1, c2, c3, c4 = candles[-4], candles[-3], candles[-2], candles[-1]
 
-    # Order Block Bullish: última vela de baixa antes do impulso de alta
+    # Order Block Bullish
     if c2['close'] < c2['open'] and c4['close'] > c3['high']:
         return {"type": "BULLISH_OB", "high": c2['high'], "low": c2['low']}
 
-    # Order Block Bearish: última vela de alta antes do impulso de baixa
+    # Order Block Bearish
     if c2['close'] > c2['open'] and c4['close'] < c3['low']:
         return {"type": "BEARISH_OB", "high": c2['high'], "low": c2['low']}
 
@@ -76,8 +74,11 @@ async def run_trading_bot():
     api = MetaApi(TOKEN)
     account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
     
-    print("Conectando à conta MetaTrader via MetaApi...")
-    await account.deploy()
+    print("Verificando estado da conta no MetaApi...")
+    if account.state != 'DEPLOYED':
+        print("Iniciando deploy da conta...")
+        await account.deploy()
+        
     await account.wait_connected()
     
     connection = account.get_rpc_connection()
@@ -92,7 +93,6 @@ async def run_trading_bot():
             equity = account_information['equity']
 
             for symbol in SYMBOLS:
-                # Obtém histórico de velas recentes (M5)
                 candles = await connection.get_historical_candles(symbol, TIMEFRAME, limit=10)
                 
                 fvg = detect_fvg(candles)
@@ -106,10 +106,9 @@ async def run_trading_bot():
                         sl_pips = abs(entry_price - sl_price) * 10000
 
                         lot = calculate_lot_size(equity, sl_pips)
-                        tp_price = entry_price + (abs(entry_price - sl_price) * 2) # RR 1:2
+                        tp_price = entry_price + (abs(entry_price - sl_price) * 2)
 
                         print(f"[{symbol}] Oportunidade de COMPRA detetada! Lote: {lot} | SL: {sl_price} | TP: {tp_price}")
-                        # await connection.create_market_buy_order(symbol, lot, sl_price, tp_price)
 
                     elif fvg['type'] == "BEARISH_FVG" and ob['type'] == "BEARISH_OB":
                         sl_price = ob['high']
@@ -117,12 +116,10 @@ async def run_trading_bot():
                         sl_pips = abs(entry_price - sl_price) * 10000
 
                         lot = calculate_lot_size(equity, sl_pips)
-                        tp_price = entry_price - (abs(entry_price - sl_price) * 2) # RR 1:2
+                        tp_price = entry_price - (abs(entry_price - sl_price) * 2)
 
                         print(f"[{symbol}] Oportunidade de VENDA detetada! Lote: {lot} | SL: {sl_price} | TP: {tp_price}")
-                        # await connection.create_market_sell_order(symbol, lot, sl_price, tp_price)
 
-            # Aguarda o próximo ciclo de verificação (ex: a cada 60 segundos)
             await asyncio.sleep(60)
 
         except Exception as e:
