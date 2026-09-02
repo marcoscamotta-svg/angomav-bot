@@ -74,13 +74,9 @@ async def run_trading_bot():
     api = MetaApi(TOKEN)
     account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
     
-    print("Verificando estado da conta no MetaApi...")
-    if account.state != 'DEPLOYED':
-        print("Iniciando deploy da conta...")
-        await account.deploy()
-        
-    await account.wait_connected()
+    print("Conectando à conta MetaTrader ativa via RPC...")
     
+    # Conecta diretamente à conta sem chamar deploy()
     connection = account.get_rpc_connection()
     await connection.connect()
     await connection.wait_synchronized()
@@ -128,3 +124,4 @@ async def run_trading_bot():
 
 if __name__ == "__main__":
     asyncio.run(run_trading_bot())
+
