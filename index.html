@@ -1,0 +1,34 @@
+<!-- Card Informativo e Botão de Download Directo -->
+<div style="background-color: #1a2332; border-radius: 10px; padding: 20px; margin: 20px 0; color: white; text-align: center;">
+    <h2 style="margin-top: 0; color: #ffffff;">🛡️ Angomav Trading App</h2>
+    <p style="color: #cbd5e1; font-size: 15px;">A aplicação está a rodar diretamente do servidor Termux.</p>
+    
+    <button id="btn-install-app" style="background-color: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 16px; margin-top: 10px;">
+        📥 Descarregar & Instalar Aplicação
+    </button>
+</div>
+
+<script>
+let deferredPrompt;
+
+// Captura o evento nativo de instalação do navegador
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+});
+
+// Ação do botão para acionar o download/instalação
+document.getElementById('btn-install-app').addEventListener('click', async () => {
+    if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+            console.log('Aplicação instalada com sucesso!');
+        }
+        deferredPrompt = null;
+    } else {
+        alert('Para baixar/instalar, aceda via HTTPS pelo link do Cloudflare.');
+    }
+});
+</script>
+

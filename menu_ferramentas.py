@@ -1,0 +1,59 @@
+import os
+import subprocess
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Prompt
+
+console = Console()
+
+def exibir_menu():
+    os.system("clear")
+    console.print(Panel.fit("[bold cyan]CENTRAL DE FERRAMENTAS TERMUX[/bold cyan]", border_style="green"))
+    console.print("\n[1] [bold yellow]Organizar Pasta Downloads[/bold yellow]")
+    console.print("[2] [bold yellow]Analisar Cabeçalhos de Segurança Web[/bold yellow]")
+    console.print("[3] [bold yellow]Monitor de Cotações de Mercado[/bold yellow]")
+    console.print("[4] [bold yellow]Gerar Relatório do Sistema em PDF[/bold yellow]")
+    console.print("[5] [bold yellow]Calculadora de Gestão de Risco (Lote)[/bold yellow]")
+    console.print("[6] [bold yellow]Níveis de Fibonacci (Análise Técnica)[/bold yellow]")
+    console.print("[7] [bold yellow]Diagnóstico de Conexão & IP[/bold yellow]")
+    console.print("[8] [bold yellow]Explorar Dispositivos na Rede Wi-Fi[/bold yellow]")
+    console.print("[9] [bold yellow]Fazer Backup (.zip) dos Scripts[/bold yellow]")
+    console.print("[10] [bold red]Sair[/bold red]\n")
+
+while True:
+    exibir_menu()
+    opcao = Prompt.ask("Escolha uma opção", choices=["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"])
+
+    if opcao == "1":
+        console.print("\n[bold green][*] Executando organizador...[/bold green]\n")
+        subprocess.run(["python", "organizador.py"])
+        input("\nPressione ENTER para voltar ao menu...")
+    elif opcao == "2":
+        console.print("\n[bold green][*] Executando analisador web...[/bold green]\n")
+        subprocess.run(["python", "Scripts/verificador_web.py"])
+        input("\nPressione ENTER para voltar ao menu...")
+    elif opcao == "3":
+        subprocess.run(["python", "cotacoes.py"])
+        input("\nPressione ENTER para voltar ao menu...")
+    elif opcao == "4":
+        console.print("\n[bold green][*] Gerando PDF...[/bold green]\n")
+        subprocess.run(["python", "gerar_pdf.py"])
+        input("\nPressione ENTER para voltar ao menu...")
+    elif opcao == "5":
+        subprocess.run(["python", "gestao_risco.py"])
+        input("\nPressione ENTER para voltar ao menu...")
+    elif opcao == "6":
+        subprocess.run(["python", "fibonacci.py"])
+        input("\nPressione ENTER para voltar ao menu...")
+    elif opcao == "7":
+        subprocess.run(["python", "meu_ip.py"])
+        input("\nPressione ENTER para voltar ao menu...")
+    elif opcao == "8":
+        subprocess.run(["python", "explorar_rede.py"])
+        input("\nPressione ENTER para voltar ao menu...")
+    elif opcao == "9":
+        subprocess.run(["python", "fazer_backup.py"])
+        input("\nPressione ENTER para voltar ao menu...")
+    elif opcao == "10":
+        console.print("\n[bold blue]Saindo... Até logo![/bold blue]")
+        break
