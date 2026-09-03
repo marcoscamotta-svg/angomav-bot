@@ -5,7 +5,16 @@ from metaapi_cloud_sdk import MetaApi
 API_KEY = os.getenv("META_API_KEY")
 ACCOUNT_ID = os.getenv("META_API_ACCOUNT_ID")
 
-async def run_trading_bot(bot_status):
+# Variável de estado esperada pelo main.py
+bot_status = {
+    "online": False,
+    "last_signals": []
+}
+
+async def run_trading_bot(bot_status_param=None):
+    global bot_status
+    target_status = bot_status_param if bot_status_param is not None else bot_status
+
     if not API_KEY or not ACCOUNT_ID:
         print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes!")
         return
@@ -23,14 +32,14 @@ async def run_trading_bot(bot_status):
         connection = account.get_rpc_connection()
         await connection.connect()
 
-        bot_status["online"] = True
+        target_status["online"] = True
         print("⚡ Conectado com sucesso ao servidor da MetaApi!")
 
         from strategy import analisar_estrategia
 
         while True:
             try:
-                await analisar_estrategia(connection, bot_status)
+                await analisar_estrategia(connection, target_status)
             except Exception as err:
                 if "TimeoutException" not in str(err):
                     print(f"⚠️ AVISO: {err}")
@@ -39,7 +48,7 @@ async def run_trading_bot(bot_status):
 
     except Exception as e:
         print(f"❌ Erro na conexão MetaApi: {e}")
-        bot_status["online"] = False
+        target_status["online"] = False
 
 async def executar_ordem(connection, symbol, action, volume, sl=None, tp=None):
     try:
