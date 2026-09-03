@@ -6,7 +6,7 @@ from bot_engine import run_trading_bot, bot_status
 
 app = Flask(__name__)
 
-# Rota para a API que o JavaScript consulta
+# Rota de API do status
 @app.route('/api/status', methods=['GET'])
 def get_api_status():
     return jsonify({
@@ -17,7 +17,7 @@ def get_api_status():
         "last_signals": bot_status.get("last_signals", [])
     })
 
-# Rota principal para carregar o Dashboard HTML
+# Rota principal para o HTML
 @app.route('/')
 def index():
     return """
@@ -108,7 +108,7 @@ def index():
                     });
                 }
             } catch (e) {
-                console.error("Erro ao atualizar o dashboard:", e);
+                console.error("Erro ao atualizar dashboard:", e);
             }
         }
 
@@ -119,13 +119,15 @@ def index():
 </html>
     """
 
-def start_bot():
+def start_bot_thread():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(run_trading_bot())
 
+# Inicialização automática da thread no carregamento do módulo pelo Gunicorn
+t = threading.Thread(target=start_bot_thread, daemon=True)
+t.start()
+
 if __name__ == "__main__":
-    t = threading.Thread(target=start_bot, daemon=True)
-    t.start()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
