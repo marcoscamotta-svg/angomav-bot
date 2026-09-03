@@ -24,10 +24,9 @@ async def run_trading_bot():
         print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes nas variáveis de ambiente!")
         return
 
-    # Instancia a SDK definindo a região 'london' e aumentando o timeout para evitar desconexões
+    # Deixa o SDK identificar automaticamente a região da conta sem forçar 'london'
     api = MetaApi(API_KEY, {
-        'region': 'london',
-        'requestTimeout': 30000
+        'requestTimeout': 60000
     })
 
     try:
@@ -47,7 +46,7 @@ async def run_trading_bot():
         
         bot_status["online"] = True
         bot_status["connected"] = True
-        print("⚡ Conectado com sucesso ao servidor do MetaApi (London Region)!")
+        print("⚡ Conectado com sucesso ao servidor do MetaApi!")
 
         # Importa o módulo da estratégia
         from strategy import analisar_estrategia
@@ -59,7 +58,7 @@ async def run_trading_bot():
             except Exception as err:
                 print(f"⚠️ Erro ao executar ciclo da estratégia: {err}")
             
-            # Intervalo entre varreduras (5 segundos)
+            # Intervalo de 5 segundos entre análises
             await asyncio.sleep(5)
 
     except Exception as e:
