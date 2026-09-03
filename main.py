@@ -2,91 +2,9 @@ import os
 import threading
 import asyncio
 from flask import Flask, jsonify
-from metaapi_cloud_sdk import MetaApi
 from bot_engine import run_trading_bot, bot_status
 
 app = Flask(__name__)
-
-# Configurações do MetaApi via Variáveis de Ambiente
-TOKEN = os.environ.get("META_API_TOKEN")
-ACCOUNT_ID = os.environ.get("META_API_ACCOUNT_ID")
-
-api = MetaApi(TOKEN) if TOKEN else None
-
-# ==========================================
-# MÓDULO DE EXECUÇÃO AUTOMÁTICA DE TRADING
-# ==========================================
-
-async def executar_ordem_mercado(symbol: str, action: str, volume: float, stop_loss: float = None, take_profit: float = None):
-    """
-    Executa ordens de COMPRA (BUY) ou VENDA (SELL) a mercado no MT5 via MetaApi.
-    """
-    if not api or not ACCOUNT_ID:
-        print("❌ MetaApi Token ou Account ID não configurados.")
-        return None
-
-    try:
-        account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
-        connection = account.get_rpc_connection()
-        await connection.connect()
-        await connection.wait_synchronization()
-
-        print(f"🚀 Enviando ordem de {action}: {symbol} | Lote: {volume}")
-
-        if action.upper() == "BUY":
-            result = await connection.create_market_buy_order(
-                symbol=symbol,
-                volume=volume,
-                stop_loss=stop_loss,
-                take_profit=take_profit,
-                options={'comment': 'Angomav Bot SMC Auto'}
-            )
-        elif action.upper() == "SELL":
-            result = await connection.create_market_sell_order(
-                symbol=symbol,
-                volume=volume,
-                stop_loss=stop_loss,
-                take_profit=take_profit,
-                options={'comment': 'Angomav Bot SMC Auto'}
-            )
-        else:
-            print(f"❌ Ação inválida: {action}")
-            return None
-
-        print(f"✅ Ordem executada com sucesso! Ticket: {result.get('orderId')}")
-        return result
-
-    except Exception as e:
-        print(f"❌ Erro ao executar ordem de {action}: {e}")
-        return None
-
-async def fechar_todas_posicoes(symbol: str = None):
-    """
-    Fecha posições abertas no MT5. Se 'symbol' for fornecido, fecha apenas desse par.
-    """
-    if not api or not ACCOUNT_ID:
-        return
-
-    try:
-        account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
-        connection = account.get_rpc_connection()
-        await connection.connect()
-        await connection.wait_synchronization()
-
-        positions = await connection.get_positions()
-        
-        for pos in positions:
-            if symbol is None or pos['symbol'] == symbol:
-                print(f"🛑 Fechando posição #{pos['id']} ({pos['symbol']})...")
-                await connection.close_position(pos['id'])
-                print(f"✅ Posição #{pos['id']} fechada com sucesso.")
-
-    except Exception as e:
-        print(f"❌ Erro ao fechar posições: {e}")
-
-# ==========================================
-# INTERFACE WEB / DASHBOARD (FLASK)
-# ==========================================
 
 @app.route('/')
 def home():
@@ -191,7 +109,6 @@ def run_bot_in_thread():
     asyncio.set_event_loop(loop)
     loop.run_until_complete(run_trading_bot())
 
-# Inicia o robô em segundo plano no arranque
 t = threading.Thread(target=run_bot_in_thread, daemon=True)
 t.start()
 
