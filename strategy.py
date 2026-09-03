@@ -3,11 +3,10 @@ from datetime import datetime
 
 async def analisar_estrategia(connection, bot_status):
     """
-    Análise SMC/Elliott + Execução Automática em XAU/USD (Ouro)
+    Análise SMC (FVG + CHoCH) Real com Leitura Leve de Velas em XAU/USD (Ouro)
     """
     try:
-        # Definido para Ouro (XAUUSD). Se a tua corretora usar sufixo, ajusta aqui (ex: "XAUUSD.m")
-        symbol = "XAUUSD" 
+        symbol = "XAUUSD"
         current_price = 0.0
 
         # 1. Puxa Preço Atual do Ouro
@@ -27,80 +26,107 @@ async def analisar_estrategia(connection, bot_status):
         except Exception:
             pass
 
-        # Preço de fallback caso a cotação inicial falhe
         if current_price == 0.0:
-            current_price = 2500.00
+            return  # Aguarda a próxima varredura se a cotação ainda não carregou
 
         hora_atual = datetime.now().strftime("%H:%M:%S")
-
         bot_status["online"] = True
         bot_status["connected"] = True
         bot_status["last_scan"] = hora_atual
 
-        # 3. Leitura da Estratégia SMC / Wyckoff / Elliott para Ouro
-        suporte_h1 = round(current_price - 5.0, 2)
-        resistencia_h1 = round(current_price + 5.0, 2)
-        bias_h1 = "BULLISH" if current_price >= suporte_h1 else "BEARISH"
+        # 3. Leitura LEVE do Histórico de Velas (Apenas 5 velas para não dar timeout)
+        candles_m15 = []
+        candles_m1 = []
 
-        onda_m15 = "ONDA_3_IMPULSO" if bias_h1 == "BULLISH" else "ONDA_C_CORRECAO"
-        fvg_m15 = "BULLISH_FVG" if bias_h1 == "BULLISH" else "BEARISH_FVG"
+        try:
+            # Puxa 5 velas do gráfico M15
+            candles_m15 = await connection.get_historical_candles(symbol, "15m", None, 5)
+        except Exception:
+            pass
 
-        choch_m1 = "BULLISH_CHOCH" if bias_h1 == "BULLISH" else "BEARISH_CHOCH"
-        evento_wyckoff = "SPRING" if bias_h1 == "BULLISH" else "UTAD"
-        fvg_m1 = "PRESENTE"
+        try:
+            # Puxa 5 velas do gráfico M1
+            candles_m1 = await connection.get_historical_candles(symbol, "1m", None, 5)
+        except Exception:
+            pass
 
+        # Variáveis de Estado da Estrutura SMC
+        fvg_bullish = False
+        fvg_bearish = False
+        choch_bullish = False
+        choch_bearish = False
+
+        # Validação de Fair Value Gap (FVG) Real em M15
+        if candles_m15 and len(candles_m15) >= 3:
+            candle_1 = candles_m15[-3]  # Vela 1
+            candle_3 = candles_m15[-1]  # Vela 3 (Mais recente)
+
+            # Bullish FVG: A mínima da Vela 3 é estritamente maior que a máxima da Vela 1
+            if candle_3['low'] > candle_1['high']:
+                fvg_bullish = True
+            # Bearish FVG: A máxima da Vela 3 é estritamente menor que a mínima da Vela 1
+            elif candle_3['high'] < candle_1['low']:
+                fvg_bearish = True
+
+        # Validação de Breakout / CHoCH Real em M1
+        if candles_m1 and len(candles_m1) >= 2:
+            prev_candle = candles_m1[-2]
+            last_candle = candles_m1[-1]
+
+            # CHoCH de Alta: Fecho da vela atual quebra o topo da vela anterior
+            if last_candle['close'] > prev_candle['high']:
+                choch_bullish = True
+            # CHoCH de Baixa: Fecho da vela atual quebra o fundo da vela anterior
+            elif last_candle['close'] < prev_candle['low']:
+                choch_bearish = True
+
+        # Define Viés Visual para o Dashboard Web
+        bias_str = "BULLISH" if (fvg_bullish or choch_bullish) else ("BEARISH" if (fvg_bearish or choch_bearish) else "NEUTRO")
+        
         sinal_objeto = {
-            "timeframe_h1": f"Bias: {bias_h1} | Sup: {suporte_h1} | Res: {resistencia_h1} | Preço: {current_price}",
-            "timeframe_m15": f"Elliott: {onda_m15} | FVG M15: {fvg_m15}",
-            "timeframe_m1": f"Wyckoff: {evento_wyckoff} | CHoCH: {choch_m1} | FVG M1: {fvg_m1}"
+            "timeframe_h1": f"Ativo: {symbol} | Preço: {current_price} | Viés: {bias_str}",
+            "timeframe_m15": f"M15 FVG Bullish: {fvg_bullish} | Bearish: {fvg_bearish}",
+            "timeframe_m1": f"M1 CHoCH Bullish: {choch_bullish} | Bearish: {choch_bearish}"
         }
-
         bot_status["last_signals"] = [sinal_objeto]
 
-        # 4. Módulo de Execução de Ordens no Ouro
+        # 4. Módulo de Execução de Ordens no MetaTrader 5
         try:
             positions = await connection.get_positions()
         except Exception:
             positions = []
 
+        # Só executa se NÃO houver posições abertas na conta
         if len(positions) == 0:
-            volume = 0.01  # Lote mínimo recomendado para Ouro
+            volume = 0.01  # Lote padrão
             
-            # GATILHO DE COMPRA (BUY)
-            if bias_h1 == "BULLISH" and evento_wyckoff == "SPRING" and choch_m1 == "BULLISH_CHOCH":
-                sl = round(current_price - 3.0, 2)  # Stop Loss $3.00 abaixo
-                tp = round(current_price + 6.0, 2)  # Take Profit $6.00 acima (RRR 1:2)
+            # GATILHO COMPRA: FVG M15 + CHoCH M1
+            if fvg_bullish and choch_bullish:
+                sl = round(current_price - 3.0, 2)
+                tp = round(current_price + 6.0, 2)
                 
-                print(f"🚀 [GATILHO DETETADO] A tentar abrir COMPRA em {symbol} | Lote: {volume}")
-                
+                print(f"🚀 [SINAL REAL SMC] A abrir COMPRA em {symbol} | Lote: {volume} | SL: {sl} | TP: {tp}")
                 try:
                     result = await connection.create_market_buy_order(
-                        symbol=symbol,
-                        volume=volume,
-                        stop_loss=sl,
-                        take_profit=tp
+                        symbol=symbol, volume=volume, stop_loss=sl, take_profit=tp
                     )
-                    print(f"✅ Ordem de COMPRA executada no Ouro: {result}")
+                    print(f"✅ Ordem executada com sucesso: {result}")
                 except Exception as err_order:
                     print(f"⚠️ Erro ao enviar ordem no MetaTrader: {err_order}")
 
-            # GATILHO DE VENDA (SELL)
-            elif bias_h1 == "BEARISH" and evento_wyckoff == "UTAD" and choch_m1 == "BEARISH_CHOCH":
-                sl = round(current_price + 3.0, 2)  # Stop Loss $3.00 acima
-                tp = round(current_price - 6.0, 2)  # Take Profit $6.00 abaixo (RRR 1:2)
+            # GATILHO VENDA: FVG M15 + CHoCH M1
+            elif fvg_bearish and choch_bearish:
+                sl = round(current_price + 3.0, 2)
+                tp = round(current_price - 6.0, 2)
                 
-                print(f"🔻 [GATILHO DETETADO] A tentar abrir VENDA em {symbol} | Lote: {volume}")
-                
+                print(f"🔻 [SINAL REAL SMC] A abrir VENDA em {symbol} | Lote: {volume} | SL: {sl} | TP: {tp}")
                 try:
                     result = await connection.create_market_sell_order(
-                        symbol=symbol,
-                        volume=volume,
-                        stop_loss=sl,
-                        take_profit=tp
+                        symbol=symbol, volume=volume, stop_loss=sl, take_profit=tp
                     )
-                    print(f"✅ Ordem de VENDA executada no Ouro: {result}")
+                    print(f"✅ Ordem executada com sucesso: {result}")
                 except Exception as err_order:
                     print(f"⚠️ Erro ao enviar ordem no MetaTrader: {err_order}")
 
     except Exception as e:
-        print(f"⚠️ Erro geral na estratégia: {e}")
+        print(f"⚠️ Erro geral na análise da estratégia: {e}")
