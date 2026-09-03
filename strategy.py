@@ -3,13 +3,13 @@ from datetime import datetime
 
 async def analisar_estrategia(connection, bot_status):
     """
-    Estratégia Monstra (SMC + Elliott) sem erros de log
+    Análise SMC/Elliott + Execução Automática de Ordens de Mercado
     """
     try:
         symbol = "USTEC"
         current_price = 0.0
 
-        # Tenta obter preço isolando eventuais exceções de subscrição da MetaApi
+        # 1. Puxa Preço Atual
         try:
             price_data = await connection.get_symbol_price(symbol)
             if price_data:
@@ -17,7 +17,7 @@ async def analisar_estrategia(connection, bot_status):
         except Exception:
             pass
 
-        # Tenta obter dados da conta
+        # 2. Puxa Dados da Conta
         try:
             account_info = await connection.get_account_information()
             if account_info:
@@ -26,15 +26,17 @@ async def analisar_estrategia(connection, bot_status):
         except Exception:
             pass
 
-        # Garante fallback de preço se não ler do socket no instante
         if current_price == 0.0:
-            current_price = 29114.00
+            current_price = 29119.30
 
-        # Atualiza o estado global para o web controller
+        hora_atual = datetime.now().strftime("%H:%M:%S")
+
+        # 3. Atualiza Estado para o Dashboard Web
         bot_status["online"] = True
-        bot_status["last_scan"] = datetime.now().strftime("%H:%M:%S")
+        bot_status["connected"] = True
+        bot_status["last_scan"] = hora_atual
 
-        # Análise SMC + Elliott
+        # 4. Leitura da Estratégia SMC / Wyckoff / Elliott
         suporte_h1 = round(current_price - 15.0, 2)
         resistencia_h1 = round(current_price + 15.0, 2)
         bias_h1 = "BULLISH" if current_price >= suporte_h1 else "BEARISH"
@@ -52,16 +54,49 @@ async def analisar_estrategia(connection, bot_status):
             "timeframe_m1": f"Wyckoff: {evento_wyckoff} | CHoCH: {choch_m1} | FVG M1: {fvg_m1}"
         }
 
-        texto_feed = f"[{bot_status['last_scan']}] H1: {bias_h1} | M15: {onda_m15} | M1: {evento_wyckoff}"
-
         bot_status["last_signals"] = [sinal_objeto]
-        bot_status["feed"] = [texto_feed]
 
-        # Prints organizados
-        print(f"📊 [H1] {sinal_objeto['timeframe_h1']}")
-        print(f"🌊 [M15 ELLIOTT] {sinal_objeto['timeframe_m15']}")
-        print(f"⚡ [M1 GATILHO] {sinal_objeto['timeframe_m1']}")
+        # 5. MÓDULO DE EXECUÇÃO DE ORDENS
+        # Verifica se já temos posições abertas para não duplicar ordens
+        positions = await connection.get_positions()
+        
+        if len(positions) == 0:
+            volume = 0.01  # Tamanho do lote ajustável
+            
+            # GATILHO DE COMPRA (BUY)
+            if bias_h1 == "BULLISH" and evento_wyckoff == "SPRING" and choch_m1 == "BULLISH_CHOCH":
+                sl = round(current_price - 20.0, 2)  # Stop Loss 20 pontos abaixo
+                tp = round(current_price + 40.0, 2)  # Take Profit RRR 1:2
+                
+                print(f"🚀 [GATILHO DETETADO] A abrir COMPRA em {symbol} | Lote: {volume} | SL: {sl} | TP: {tp}")
+                
+                # Executa a compra no MetaTrader via MetaApi
+                result = await connection.create_market_buy_order(
+                    symbol=symbol,
+                    volume=volume,
+                    stop_loss=sl,
+                    take_profit=tp
+                )
+                print(f"✅ Order de COMPRA executada com sucesso: {result}")
 
-    except Exception:
-        # Silencia erros de infraestrutura no strategy
-        pass
+            # GATILHO DE VENDA (SELL)
+            elif bias_h1 == "BEARISH" and evento_wyckoff == "UTAD" and choch_m1 == "BEARISH_CHOCH":
+                sl = round(current_price + 20.0, 2)  # Stop Loss 20 pontos acima
+                tp = round(current_price - 40.0, 2)  # Take Profit RRR 1:2
+                
+                print(f"🔻 [GATILHO DETETADO] A abrir VENDA em {symbol} | Lote: {volume} | SL: {sl} | TP: {tp}")
+                
+                # Executa a venda no MetaTrader via MetaApi
+                result = await connection.create_market_sell_order(
+                    symbol=symbol,
+                    volume=volume,
+                    stop_loss=sl,
+                    take_profit=tp
+                )
+                print(f"✅ Ordem de VENDA executada com sucesso: {result}")
+
+        else:
+            print(f"⏳ Posição ativa detetada em {symbol}. A aguardar fecho para novas entradas.")
+
+    except Exception as e:
+        print(f"⚠️ Erro no processamento da estratégia/ordem: {e}")
