@@ -3,10 +3,11 @@ from datetime import datetime
 
 async def analisar_estrategia(connection, bot_status):
     """
-    Análise SMC/Elliott + Execução Automática de Ordens de Mercado
+    Análise SMC/Elliott + Execução Automática com Proteção contra Símbolo Inválido
     """
     try:
-        symbol = "USTEC"
+        # Se na tua corretora o NASDAQ for USTEC.m, US100 ou NAS100, altera aqui
+        symbol = "USTEC" 
         current_price = 0.0
 
         # 1. Puxa Preço Atual
@@ -31,12 +32,11 @@ async def analisar_estrategia(connection, bot_status):
 
         hora_atual = datetime.now().strftime("%H:%M:%S")
 
-        # 3. Atualiza Estado para o Dashboard Web
         bot_status["online"] = True
         bot_status["connected"] = True
         bot_status["last_scan"] = hora_atual
 
-        # 4. Leitura da Estratégia SMC / Wyckoff / Elliott
+        # 3. Leitura da Estratégia
         suporte_h1 = round(current_price - 15.0, 2)
         resistencia_h1 = round(current_price + 15.0, 2)
         bias_h1 = "BULLISH" if current_price >= suporte_h1 else "BEARISH"
@@ -56,47 +56,48 @@ async def analisar_estrategia(connection, bot_status):
 
         bot_status["last_signals"] = [sinal_objeto]
 
-        # 5. MÓDULO DE EXECUÇÃO DE ORDENS
-        # Verifica se já temos posições abertas para não duplicar ordens
-        positions = await connection.get_positions()
-        
+        # 4. Execução das Ordens
+        try:
+            positions = await connection.get_positions()
+        except Exception:
+            positions = []
+
         if len(positions) == 0:
-            volume = 0.01  # Tamanho do lote ajustável
+            volume = 0.01
             
-            # GATILHO DE COMPRA (BUY)
             if bias_h1 == "BULLISH" and evento_wyckoff == "SPRING" and choch_m1 == "BULLISH_CHOCH":
-                sl = round(current_price - 20.0, 2)  # Stop Loss 20 pontos abaixo
-                tp = round(current_price + 40.0, 2)  # Take Profit RRR 1:2
+                sl = round(current_price - 20.0, 2)
+                tp = round(current_price + 40.0, 2)
                 
-                print(f"🚀 [GATILHO DETETADO] A abrir COMPRA em {symbol} | Lote: {volume} | SL: {sl} | TP: {tp}")
+                print(f"🚀 [GATILHO DETETADO] A tentar abrir COMPRA em {symbol} | Lote: {volume}")
                 
-                # Executa a compra no MetaTrader via MetaApi
-                result = await connection.create_market_buy_order(
-                    symbol=symbol,
-                    volume=volume,
-                    stop_loss=sl,
-                    take_profit=tp
-                )
-                print(f"✅ Order de COMPRA executada com sucesso: {result}")
+                try:
+                    result = await connection.create_market_buy_order(
+                        symbol=symbol,
+                        volume=volume,
+                        stop_loss=sl,
+                        take_profit=tp
+                    )
+                    print(f"✅ Ordem de COMPRA executada: {result}")
+                except Exception as err_order:
+                    print(f"⚠️ Erro ao enviar ordem no MetaTrader: {err_order}")
 
-            # GATILHO DE VENDA (SELL)
             elif bias_h1 == "BEARISH" and evento_wyckoff == "UTAD" and choch_m1 == "BEARISH_CHOCH":
-                sl = round(current_price + 20.0, 2)  # Stop Loss 20 pontos acima
-                tp = round(current_price - 40.0, 2)  # Take Profit RRR 1:2
+                sl = round(current_price + 20.0, 2)
+                tp = round(current_price - 40.0, 2)
                 
-                print(f"🔻 [GATILHO DETETADO] A abrir VENDA em {symbol} | Lote: {volume} | SL: {sl} | TP: {tp}")
+                print(f"🔻 [GATILHO DETETADO] A tentar abrir VENDA em {symbol} | Lote: {volume}")
                 
-                # Executa a venda no MetaTrader via MetaApi
-                result = await connection.create_market_sell_order(
-                    symbol=symbol,
-                    volume=volume,
-                    stop_loss=sl,
-                    take_profit=tp
-                )
-                print(f"✅ Ordem de VENDA executada com sucesso: {result}")
-
-        else:
-            print(f"⏳ Posição ativa detetada em {symbol}. A aguardar fecho para novas entradas.")
+                try:
+                    result = await connection.create_market_sell_order(
+                        symbol=symbol,
+                        volume=volume,
+                        stop_loss=sl,
+                        take_profit=tp
+                    )
+                    print(f"✅ Ordem de VENDA executada: {result}")
+                except Exception as err_order:
+                    print(f"⚠️ Erro ao enviar ordem no MetaTrader: {err_order}")
 
     except Exception as e:
-        print(f"⚠️ Erro no processamento da estratégia/ordem: {e}")
+        print(f"⚠️ Erro geral na estratégia: {e}")
