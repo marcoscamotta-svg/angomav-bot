@@ -1,87 +1,78 @@
-import time
-
-# ==========================================
-# ESTRATEGIA SMC - GERADOR DE CANDLES M5
-# REGRA DE MESA PROPRIETARIA ($5,000)
-# ==========================================
+import asyncio
 
 async def analisar_estrategia(connection, bot_status):
     """
-    Constrói velas M5 em tempo real a partir de ticks RPC
-    e calcula a presença de Fair Value Gaps (FVG).
+    Constrói velas de 5m em memória e analisa o FVG mantendo apenas a janela das últimas 3 velas.
     """
-    try:
-        # 1. Obter cotação atual
-        price_info = await connection.get_symbol_price("XAUUSD")
-        if not price_info or 'bid' not in price_info:
-            return
+    if "candles_m5" not in bot_status:
+        bot_status["candles_m5"] = []
+        bot_status["temp_ticks"] = []
 
-        bid = price_info['bid']
-        ask = price_info['ask']
-        preco_atual = (bid + ask) / 2.0
-        agora = time.time()
+    # 1. Obter preço atual do XAUUSD
+    price_data = await connection.get_symbol_price("XAUUSD")
+    current_price = price_data.get("bid", 0.0)
 
-        # 2. Inicializar estrutura de candles M5 no estado do bot
-        if "m5_candles" not in bot_status:
-            bot_status["m5_candles"] = []
-            bot_status["current_candle"] = None
+    if current_price == 0.0:
+        return
 
-        curr = bot_status["current_candle"]
+    bot_status["temp_ticks"].append(current_price)
 
-        # Intervalo de 5 minutos (300 segundos)
-        if curr is None or (agora - curr["start_time"]) >= 300:
-            if curr is not None:
-                bot_status["m5_candles"].append(curr)
-                if len(bot_status["m5_candles"]) > 10:
-                    bot_status["m5_candles"].pop(0)
+    # Simulação: Cada 20 ticks formam 1 vela de 5m (ajuste para acumulação)
+    if len(bot_status["temp_ticks"]) >= 20:
+        high_p = max(bot_status["temp_ticks"])
+        low_p = min(bot_status["temp_ticks"])
+        close_p = bot_status["temp_ticks"][-1]
+        open_p = bot_status["temp_ticks"][0]
 
-            # Novo candle M5
-            bot_status["current_candle"] = {
-                "start_time": agora,
-                "open": preco_atual,
-                "high": preco_atual,
-                "low": preco_atual,
-                "close": preco_atual
-            }
-        else:
-            # Atualizar candle M5 em andamento
-            curr["high"] = max(curr["high"], preco_atual)
-            curr["low"] = min(curr["low"], preco_atual)
-            curr["close"] = preco_atual
+        nueva_vela = {
+            "open": open_p,
+            "high": high_p,
+            "low": low_p,
+            "close": close_p
+        }
 
-        candles = bot_status["m5_candles"]
+        bot_status["candles_m5"].append(nueva_vela)
+        bot_status["temp_ticks"] = []  # Reseta ticks para a próxima vela
 
-        # Log simples de monitorização no celular
-        print(f"👀 [M5 MONITOR] Preço: {preco_atual:.2f} | Candles concluídos: {len(candles)}/3")
+        # Mantém SEMPRE apenas as últimas 3 velas fechadas na memória
+        if len(bot_status["candles_m5"]) > 3:
+            bot_status["candles_m5"].pop(0)
 
-        # 3. Análise de FVG assim que tivermos 3 velas M5 fechadas
-        if len(candles) >= 3:
-            v1, v2, v3 = candles[-3], candles[-2], candles[-1]
+    total_candles = len(bot_status["candles_m5"])
+    print(f"👀 [M5 MONITOR] Preço: {current_price:.2f} | Candles concluídos: {total_candles}/3")
 
-            # Trava para evitar mais de 1 ordem aberta
-            positions = await connection.get_positions()
-            xau_positions = [p for p in positions if p.get('symbol') == "XAUUSD"]
-            if len(xau_positions) > 0:
-                return
+    # 2. Quando tivermos exatamente 3 velas na memória, avalia o FVG
+    if total_candles == 3:
+        v1 = bot_status["candles_m5"][0]
+        v2 = bot_status["candles_m5"][1]
+        v3 = bot_status["candles_m5"][2]
 
-            symbol = "XAUUSD"
-            volume = 0.01
+        # FVG de Alta (Bullish FVG)
+        if v3["low"] > v1["high"]:
+            gap = v3["low"] - v1["high"]
+            print(f"🚀 [SINAL SMC] Bullish FVG Detetado! Gap: {gap:.2f}")
+            bot_status["last_signals"].append(f"BUY XAUUSD - FVG ({gap:.2f})")
+            
+            # Importa e executa ordem de Compra
+            from bot_engine import executar_ordem
+            sl_price = current_price - 25.0  # Stop Loss de 250 pips ($25 em 0.01)
+            tp_price = current_price + 50.0  # Take Profit de 500 pips ($50 em 0.01)
+            await executar_ordem(connection, "XAUUSD", "BUY", 0.01, sl=sl_price, tp=tp_price)
+            
+            # Limpa as velas para reiniciar o ciclo de análise
+            bot_status["candles_m5"] = []
 
-            # Bullish FVG
-            if v3['low'] > v1['high']:
-                sl = ask - 2.50
-                tp = ask + 5.00
-                msg = f"🟢 [COMPRA FVG] SL: {sl:.2f} | TP: {tp:.2f}"
-                print(msg)
-                await connection.create_market_buy_order(symbol=symbol, volume=volume, stop_loss=sl, take_profit=tp)
-
-            # Bearish FVG
-            elif v3['high'] < v1['low']:
-                sl = bid + 2.50
-                tp = bid - 5.00
-                msg = f"🔴 [VENDA FVG] SL: {sl:.2f} | TP: {tp:.2f}"
-                print(msg)
-                await connection.create_market_sell_order(symbol=symbol, volume=volume, stop_loss=sl, take_profit=tp)
-
-    except Exception as e:
-        print(f"⚠️ Erro no processamento M5: {e}")
+        # FVG de Baixa (Bearish FVG)
+        elif v3["high"] < v1["low"]:
+            gap = v1["low"] - v3["high"]
+            print(f"🚀 [SINAL SMC] Bearish FVG Detetado! Gap: {gap:.2f}")
+            bot_status["last_signals"].append(f"SELL XAUUSD - FVG ({gap:.2f})")
+            
+            # Importa e executa ordem de Venda
+            from bot_engine import executar_ordem
+            sl_price = current_price + 25.0
+            tp_price = current_price - 50.0
+            await executar_ordem(connection, "XAUUSD", "SELL", 0.01, sl=sl_price, tp=tp_price)
+            
+            # Limpa as velas para reiniciar o ciclo de análise
+            bot_status["candles_m5"] = []
