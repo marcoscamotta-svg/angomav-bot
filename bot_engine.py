@@ -14,8 +14,6 @@ bot_status = {
     "last_signals": []
 }
 
-api = MetaApi(TOKEN) if TOKEN else None
-
 # ==========================================
 # FUNÇÕES DE EXECUÇÃO DE TRADES (MT5)
 # ==========================================
@@ -65,9 +63,12 @@ async def fechar_todas_posicoes(connection, symbol=None):
 # ==========================================
 
 async def run_trading_bot():
-    if not api or not ACCOUNT_ID:
+    if not TOKEN or not ACCOUNT_ID:
         print("❌ Variáveis META_API_TOKEN ou META_API_ACCOUNT_ID não foram encontradas.")
         return
+
+    # Inicializa a API dentro do evento assíncrono para evitar erros de loop no Gunicorn
+    api = MetaApi(TOKEN)
 
     while True:
         try:
