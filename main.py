@@ -16,10 +16,10 @@ def home():
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Angomav Bot - SMC Terminal</title>
         <style>
-            body { background-color: #0b0e14; color: #e1e6ed; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; }
+            body { background-color: #0b0e14; color: #e1e6ed; font-family: sans-serif; margin: 0; padding: 20px; }
             .container { max-width: 900px; margin: 0 auto; }
             .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #2a323d; padding-bottom: 15px; margin-bottom: 20px; }
-            .title { font-size: 22px; font-weight: bold; color: #58a6ff; }
+            .title { font-size: 20px; font-weight: bold; color: #58a6ff; }
             .badge { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: bold; }
             .badge-online { background-color: rgba(0, 255, 136, 0.15); color: #00ff88; border: 1px solid #00ff88; }
             .badge-offline { background-color: rgba(255, 68, 68, 0.15); color: #ff4444; border: 1px solid #ff4444; }
@@ -30,7 +30,6 @@ def home():
             .signals-card { background: #151a21; border-radius: 8px; padding: 20px; border: 1px solid #2a323d; }
             ul { list-style: none; padding: 0; margin: 0; }
             li { padding: 10px 0; border-bottom: 1px solid #2a323d; color: #00ff88; font-family: monospace; }
-            li:last-child { border-bottom: none; }
             .empty { color: #8b949e; font-style: italic; }
         </style>
     </head>
@@ -59,7 +58,7 @@ def home():
             <div class="signals-card">
                 <h3>📊 Feed de Confluências (SMC / Wyckoff)</h3>
                 <ul id="signals-list">
-                    <li class="empty">Nenhum sinal detetado no ciclo atual. A aguardar padrão FVG + OB...</li>
+                    <li class="empty">A carregar dados do mercado...</li>
                 </ul>
             </div>
         </div>
@@ -70,27 +69,24 @@ def home():
                     const res = await fetch('/api/status');
                     const data = await res.json();
 
-                    // Status Badge
                     const badge = document.getElementById('status-badge');
                     if (data.connected) {
                         badge.className = 'badge badge-online';
                         badge.innerText = '● ONLINE (MT5)';
                     } else {
                         badge.className = 'badge badge-offline';
-                        badge.innerText = '● OFFLINE';
+                        badge.innerText = '● CONECTANDO...';
                     }
 
-                    // Valores
                     document.getElementById('equity').innerText = '$' + Number(data.equity).toFixed(2);
                     document.getElementById('balance').innerText = '$' + Number(data.balance).toFixed(2);
                     document.getElementById('last-update').innerText = data.last_update.split(' ')[1] || data.last_update;
 
-                    // Lista de Sinais
                     const list = document.getElementById('signals-list');
                     if (data.last_signals && data.last_signals.length > 0) {
                         list.innerHTML = data.last_signals.map(s => `<li>${s}</li>`).join('');
                     } else {
-                        list.innerHTML = '<li class="empty">A varrer o mercado (EURUSD, XAUUSD...)... Sem confluências no momento.</li>';
+                        list.innerHTML = '<li class="empty">A varrer ativos (EURUSD, XAUUSD...)... Sem confluências no momento.</li>';
                     }
                 } catch (e) {
                     console.error("Erro ao atualizar o dashboard:", e);
@@ -108,13 +104,17 @@ def home():
 def get_status():
     return jsonify(bot_status)
 
-def start_bot_loop():
-    asyncio.run(run_trading_bot())
+def run_bot_in_thread():
+    # Cria um novo evento assíncrono isolado para a thread do bot
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(run_trading_bot())
 
 if __name__ == "__main__":
-    t = threading.Thread(target=start_bot_loop)
-    t.daemon = True
+    # Inicia a thread do robô
+    t = threading.Thread(target=run_bot_in_thread, daemon=True)
     t.start()
     
+    # Inicia o servidor web do Flask imediatamente
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
