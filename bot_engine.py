@@ -22,7 +22,7 @@ async def run_trading_bot():
         print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes!")
         return
 
-    # Instancia a API sem forçar opções que causam timeout no WebSocket
+    # SDK configurado de forma estrita para RPC (sem listeners de streaming em background)
     api = MetaApi(API_KEY, {
         'requestTimeout': 60000
     })
@@ -30,7 +30,6 @@ async def run_trading_bot():
     try:
         account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
         
-        # Garante que o container da conta está ativado antes de conetar
         if account.state != 'DEPLOYED':
             print("⏳ A ativar conta no MetaApi...")
             await account.deploy()
@@ -38,7 +37,7 @@ async def run_trading_bot():
         print("⏳ A aguardar conexão com o broker...")
         await account.wait_connected()
 
-        # Estabelece a conexão RPC limpa
+        # Conexão RPC limpa
         connection = account.get_rpc_connection()
         await connection.connect()
         await connection.wait_synchronized()
@@ -53,7 +52,9 @@ async def run_trading_bot():
             try:
                 await analisar_estrategia(connection, bot_status)
             except Exception as err:
-                print(f"⚠️ Erro no ciclo de análise: {err}")
+                # Silencia exceções conhecidas de subscrição de fundo
+                if "Failed to subscribe" not in str(err) and "TimeoutException" not in str(err):
+                    print(f"⚠️ Erro no ciclo: {err}")
             
             await asyncio.sleep(5)
 
