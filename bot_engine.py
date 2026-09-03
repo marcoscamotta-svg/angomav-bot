@@ -1,7 +1,11 @@
 import os
 import asyncio
+import logging
 from datetime import datetime
 from metaapi_cloud_sdk import MetaApi
+
+# Silencia os logs internos de erro do SDK do MetaApi que poluem o Railway
+logging.getLogger("metaapi_cloud_sdk").setLevel(logging.CRITICAL)
 
 API_KEY = os.getenv("META_API_KEY", "")
 ACCOUNT_ID = os.getenv("META_API_ACCOUNT_ID", "")
@@ -22,9 +26,8 @@ async def run_trading_bot():
         print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes!")
         return
 
-    # Força a região 'london' no SDK para alinhar com o servidor da conta
+    # Inicializa o SDK limpo (sem passar region no construtor global)
     api = MetaApi(API_KEY, {
-        'region': 'london',
         'requestTimeout': 60000
     })
 
@@ -38,14 +41,20 @@ async def run_trading_bot():
         print("⏳ A aguardar conexão com o broker...")
         await account.wait_connected()
 
-        # Estabelece conexão RPC
+        # Obtém a conexão RPC
         connection = account.get_rpc_connection()
         await connection.connect()
         await connection.wait_synchronized()
 
+        # Desativa explicitamente qualquer sincronização automática de streaming/quotes
+        try:
+            await account.unsubscribe()
+        except Exception:
+            pass
+
         bot_status["online"] = True
         bot_status["connected"] = True
-        print("⚡ Conectado com sucesso ao MetaTrader 5 (London Region)!")
+        print("⚡ Conectado com sucesso ao MetaTrader 5!")
 
         from strategy import analisar_estrategia
 
@@ -53,7 +62,7 @@ async def run_trading_bot():
             try:
                 await analisar_estrategia(connection, bot_status)
             except Exception as err:
-                pass  # Ignora erros de subscrição de fundo do SDK
+                pass
             
             await asyncio.sleep(5)
 
