@@ -105,16 +105,14 @@ def get_status():
     return jsonify(bot_status)
 
 def run_bot_in_thread():
-    # Cria um novo evento assíncrono isolado para a thread do bot
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(run_trading_bot())
 
+# Inicia a thread do robô automaticamente ao carregar a app
+t = threading.Thread(target=run_bot_in_thread, daemon=True)
+t.start()
+
 if __name__ == "__main__":
-    # Inicia a thread do robô
-    t = threading.Thread(target=run_bot_in_thread, daemon=True)
-    t.start()
-    
-    # Inicia o servidor web do Flask imediatamente
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
