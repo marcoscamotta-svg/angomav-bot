@@ -11,20 +11,20 @@ bot_status = {
     "connected": False,
     "equity": 0.0,
     "balance": 0.0,
-    "last_update": "--",
+    "last_update": "-",
     "last_signals": []
 }
 
 # ==========================================
-# FUNÇÕES DE EXECUÇÃO DE TRADES (MT5)
+# FUNÇÕES DE EXECUÇÃO DE ORDENS (MT5)
 # ==========================================
 
-async def abrir_posicao(connection, symbol, action, volume, sl=None, tp=None):
+async def executar_ordem(connection, symbol, action, volume, sl=None, tp=None):
     """
-    Executa ordens de COMPRA (BUY) ou VENDA (SELL) a mercado no MT5 via MetaApi.
+    Executa ordem de COMPRA (BUY) ou VENDA (SELL) a mercado no MT5 via MetaApi.
     """
     try:
-        print(f"🚀 [ORDEM] Enviando {action} para {symbol} | Lote: {volume}")
+        print(f"🚀 [ORDEM] Enviando ordem para {symbol} | Ação: {action}")
         if action.upper() == "BUY":
             res = await connection.create_market_buy_order(
                 symbol=symbol,
@@ -53,19 +53,19 @@ async def fechar_todas_posicoes(connection, symbol=None):
         positions = await connection.get_positions()
         for pos in positions:
             if symbol is None or pos['symbol'] == symbol:
-                print(f"🛑 [FECHO] Encerrando posição #{pos['id']} ({pos['symbol']})...")
+                print(f"🔴 [FECHO] Encerrando posição #{pos['id']} ({pos['symbol']})...")
                 await connection.close_position(pos['id'])
                 print(f"✅ [FECHO] Posição #{pos['id']} encerrada.")
     except Exception as e:
-        print(f"❌ [ERRO TRADING] Falha ao fechar posições: {e}")
+        print(f"❌ [ERRO FECHO] Falha ao fechar posições: {e}")
 
 # ==========================================
-# MOTOR DE VARREDURA E ANÁLISE
+# LOOP DE VARREDURA / ANÁLISE
 # ==========================================
 
 async def run_trading_bot():
     if not TOKEN or not ACCOUNT_ID:
-        print("❌ Variáveis META_API_TOKEN ou META_API_ACCOUNT_ID não foram encontradas.")
+        print("❌ Variaveis META_API_TOKEN ou META_API_ACCOUNT_ID nao foram encontradas!")
         return
 
     api = MetaApi(TOKEN)
@@ -75,7 +75,12 @@ async def run_trading_bot():
             account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
             connection = account.get_rpc_connection()
             await connection.connect()
-            await connection.wait_synchronized()
+            
+            # Sincronização segura sem forçar timeout rígido
+            try:
+                await connection.wait_synchronized(timeout_in_seconds=15)
+            except Exception as sync_err:
+                print(f"⚠️ Aviso na sincronização inicial (continuando): {sync_err}")
 
             bot_status["connected"] = True
             print("⚡ Conectado com sucesso ao servidor da MetaApi!")
@@ -97,5 +102,5 @@ async def run_trading_bot():
 
         except Exception as e:
             bot_status["connected"] = False
-            print(f"⚠️ Erro no loop do bot: {e}. Reconectando em 15s...")
+            print(f"❌ Erro no loop do bot: {e}. Reconectando em 15s...")
             await asyncio.sleep(15)
