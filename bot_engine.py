@@ -5,7 +5,7 @@ from metaapi_cloud_sdk import MetaApi
 API_KEY = os.getenv("META_API_KEY")
 ACCOUNT_ID = os.getenv("META_API_ACCOUNT_ID")
 
-async def iniciar_bot(bot_status):
+async def run_trading_bot(bot_status):
     if not API_KEY or not ACCOUNT_ID:
         print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes!")
         return
@@ -20,7 +20,6 @@ async def iniciar_bot(bot_status):
 
         await account.wait_connected()
         
-        # Conexão RPC sem sincronização de streaming contínuo
         connection = account.get_rpc_connection()
         await connection.connect()
 
@@ -33,7 +32,6 @@ async def iniciar_bot(bot_status):
             try:
                 await analisar_estrategia(connection, bot_status)
             except Exception as err:
-                # Silencia o erro de subscrição para não poluir os logs
                 if "TimeoutException" not in str(err):
                     print(f"⚠️ AVISO: {err}")
             
