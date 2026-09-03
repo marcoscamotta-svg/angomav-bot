@@ -22,27 +22,25 @@ api = MetaApi(TOKEN) if TOKEN else None
 
 async def abrir_posicao(connection, symbol, action, volume, sl=None, tp=None):
     """
-    Executa ordens de COMPRA (BUY) ou VENDA (SELL) no MT5 via MetaApi.
+    Executa ordens de COMPRA (BUY) ou VENDA (SELL) a mercado no MT5 via MetaApi.
     """
     try:
-        print(f"🚀 [ORDEM] Enviando ordem de {action} para {symbol} | Lote: {volume}")
+        print(f"🚀 [ORDEM] Enviando {action} para {symbol} | Lote: {volume}")
         if action.upper() == "BUY":
             res = await connection.create_market_buy_order(
                 symbol=symbol,
                 volume=volume,
                 stop_loss=sl,
-                take_profit=tp,
-                options={'comment': 'Angomav SMC Bot'}
+                take_profit=tp
             )
         elif action.upper() == "SELL":
             res = await connection.create_market_sell_order(
                 symbol=symbol,
                 volume=volume,
                 stop_loss=sl,
-                take_profit=tp,
-                options={'comment': 'Angomav SMC Bot'}
+                take_profit=tp
             )
-        print(f"✅ [ORDEM] Executada com sucesso!")
+        print("✅ [ORDEM] Executada com sucesso no MT5!")
         return res
     except Exception as e:
         print(f"❌ [ERRO TRADING] Falha ao executar {action}: {e}")
@@ -50,13 +48,13 @@ async def abrir_posicao(connection, symbol, action, volume, sl=None, tp=None):
 
 async def fechar_todas_posicoes(connection, symbol=None):
     """
-    Fecha todas as posições abertas ou apenas do símbolo especificado.
+    Fecha posições abertas no MT5.
     """
     try:
         positions = await connection.get_positions()
         for pos in positions:
             if symbol is None or pos['symbol'] == symbol:
-                print(f"🛑 [FECHO] Fechando posição #{pos['id']} ({pos['symbol']})...")
+                print(f"🛑 [FECHO] Encerrando posição #{pos['id']} ({pos['symbol']})...")
                 await connection.close_position(pos['id'])
                 print(f"✅ [FECHO] Posição #{pos['id']} encerrada.")
     except Exception as e:
