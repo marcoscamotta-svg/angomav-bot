@@ -1,78 +1,120 @@
 import asyncio
 
+async def obter_historico(connection, symbol, timeframe, count=20):
+    """
+    Procura o histórico recente de velas via MetaApi para análise de estrutura.
+    """
+    try:
+        candles = await connection.get_historical_candles(symbol, timeframe, limit=count)
+        return candles
+    except Exception as e:
+        print(f"⚠️ Erro ao procurar candles {timeframe}: {e}")
+        return []
+
+def analisar_bias_h1(candles_h1):
+    """
+    1. Identifica a tendência em H1 (Altista ou Baixista).
+    2. Identifica os níveis de Suporte e Resistência relevantes.
+    """
+    if len(candles_h1) < 5:
+        return "NEUTRO", None, None
+
+    # Obter máximas e mínimas recentes
+    highs = [c['high'] for c in candles_h1]
+    lows = [c['low'] for c in candles_h1]
+
+    resistencia = max(highs[-10:])
+    suporte = min(lows[-10:])
+    
+    ultimo_fecho = candles_h1[-1]['close']
+    fecho_anterior = candles_h1[-5]['close']
+
+    # Determinação do Bias baseada em Highs/Lows e direção do fecho
+    if ultimo_fecho > fecho_anterior:
+        bias = "BULLISH"
+    elif ultimo_fecho < fecho_anterior:
+        bias = "BEARISH"
+    else:
+        bias = "NEUTRO"
+
+    return bias, suporte, resistencia
+
+def detectar_fvg(candles):
+    """
+    Identifica Fair Value Gaps (Ineficiências) na sequência de 3 velas.
+    """
+    if len(candles) < 3:
+        return None, 0.0
+
+    v1, v2, v3 = candles[-3], candles[-2], candles[-1]
+
+    # FVG de Alta
+    if v3['low'] > v1['high']:
+        gap = v3['low'] - v1['high']
+        return "BULLISH", gap
+
+    # FVG de Baixa
+    elif v3['high'] < v1['low']:
+        gap = v1['low'] - v3['high']
+        return "BEARISH", gap
+
+    return None, 0.0
+
+
 async def analisar_estrategia(connection, bot_status):
     """
-    Constrói velas de 5m em memória e analisa o FVG mantendo apenas a janela das últimas 3 velas.
+    Motor SMC Completo: H1 (Bias + Suporte/Resistência) -> M5 (Estrutura) -> M1 (Refinamento)
     """
-    if "candles_m5" not in bot_status:
-        bot_status["candles_m5"] = []
-        bot_status["temp_ticks"] = []
+    symbol = "XAUUSD"
 
-    # 1. Obter preço atual do XAUUSD
-    price_data = await connection.get_symbol_price("XAUUSD")
-    current_price = price_data.get("bid", 0.0)
+    # 1. Carregar histórico de velas dos 3 Timeframes
+    candles_h1 = await obter_historico(connection, symbol, "1h", count=15)
+    candles_m5 = await obter_historico(connection, symbol, "5m", count=10)
+    candles_m1 = await obter_historico(connection, symbol, "1m", count=10)
 
-    if current_price == 0.0:
+    if not candles_h1 or not candles_m5 or not candles_m1:
+        print("⏳ A aguardar sincronização dos dados históricos dos 3 timeframes...")
         return
 
-    bot_status["temp_ticks"].append(current_price)
+    # 2. Análise H1: Tendência Maior + Suporte/Resistência
+    bias_h1, suporte_h1, resistencia_h1 = analisar_bias_h1(candles_h1)
+    preco_atual = candles_m1[-1]['close']
 
-    # Simulação: Cada 20 ticks formam 1 vela de 5m (ajuste para acumulação)
-    if len(bot_status["temp_ticks"]) >= 20:
-        high_p = max(bot_status["temp_ticks"])
-        low_p = min(bot_status["temp_ticks"])
-        close_p = bot_status["temp_ticks"][-1]
-        open_p = bot_status["temp_ticks"][0]
+    print(f"\n📊 [ANALISE H1] Bias: {bias_h1} | Suporte: {suporte_h1:.2f} | Resistência: {resistencia_h1:.2f} | Preço: {preco_atual:.2f}")
 
-        nueva_vela = {
-            "open": open_p,
-            "high": high_p,
-            "low": low_p,
-            "close": close_p
-        }
+    # 3. Análise M5: Estrutura FVG
+    tipo_fvg_m5, gap_m5 = detectar_fvg(candles_m5)
 
-        bot_status["candles_m5"].append(nueva_vela)
-        bot_status["temp_ticks"] = []  # Reseta ticks para a próxima vela
+    # 4. Análise M1: Confirmação de Entrada
+    tipo_fvg_m1, gap_m1 = detectar_fvg(candles_m1)
 
-        # Mantém SEMPRE apenas as últimas 3 velas fechadas na memória
-        if len(bot_status["candles_m5"]) > 3:
-            bot_status["candles_m5"].pop(0)
+    # ---------------------------------------------------------
+    # CONFLUÊNCIA DE COMPRA (BUY)
+    # ---------------------------------------------------------
+    # Regras: Bias H1 deve ser BULLISH + Preço acima do Suporte H1 + FVG em M5 + Confirmação em M1
+    if bias_h1 == "BULLISH" and preco_atual > suporte_h1:
+        if tipo_fvg_m5 == "BULLISH" and tipo_fvg_m1 == "BULLISH":
+            print(f"🚀 [SINAL CONFLUENTE - BUY] H1 Bullish + FVG M5 + FVG M1! Gap M1: {gap_m1:.2f}")
+            bot_status["last_signals"].append(f"BUY {symbol} - Confluência Multi-Timeframe")
 
-    total_candles = len(bot_status["candles_m5"])
-    print(f"👀 [M5 MONITOR] Preço: {current_price:.2f} | Candles concluídos: {total_candles}/3")
-
-    # 2. Quando tivermos exatamente 3 velas na memória, avalia o FVG
-    if total_candles == 3:
-        v1 = bot_status["candles_m5"][0]
-        v2 = bot_status["candles_m5"][1]
-        v3 = bot_status["candles_m5"][2]
-
-        # FVG de Alta (Bullish FVG)
-        if v3["low"] > v1["high"]:
-            gap = v3["low"] - v1["high"]
-            print(f"🚀 [SINAL SMC] Bullish FVG Detetado! Gap: {gap:.2f}")
-            bot_status["last_signals"].append(f"BUY XAUUSD - FVG ({gap:.2f})")
-            
-            # Importa e executa ordem de Compra
             from bot_engine import executar_ordem
-            sl_price = current_price - 25.0  # Stop Loss de 250 pips ($25 em 0.01)
-            tp_price = current_price + 50.0  # Take Profit de 500 pips ($50 em 0.01)
-            await executar_ordem(connection, "XAUUSD", "BUY", 0.01, sl=sl_price, tp=tp_price)
-            
-            # Limpa as velas para reiniciar o ciclo de análise
-            bot_status["candles_m5"] = []
+            sl_price = preco_atual - 15.0  # Stop Loss reduzido para $15 (150 pips) devido à precisão M1
+            tp_price = preco_atual + 45.0  # Risco/Retorno 1:3 ($45 de ganho)
+            await executar_ordem(connection, symbol, "BUY", 0.01, sl=sl_price, tp=tp_price)
 
-        # FVG de Baixa (Bearish FVG)
-        elif v3["high"] < v1["low"]:
-            gap = v1["low"] - v3["high"]
-            print(f"🚀 [SINAL SMC] Bearish FVG Detetado! Gap: {gap:.2f}")
-            bot_status["last_signals"].append(f"SELL XAUUSD - FVG ({gap:.2f})")
-            
-            # Importa e executa ordem de Venda
+    # ---------------------------------------------------------
+    # CONFLUÊNCIA DE VENDA (SELL)
+    # ---------------------------------------------------------
+    # Regras: Bias H1 deve ser BEARISH + Preço abaixo da Resistência H1 + FVG em M5 + Confirmação em M1
+    elif bias_h1 == "BEARISH" and preco_atual < resistencia_h1:
+        if tipo_fvg_m5 == "BEARISH" and tipo_fvg_m1 == "BEARISH":
+            print(f"🚀 [SINAL CONFLUENTE - SELL] H1 Bearish + FVG M5 + FVG M1! Gap M1: {gap_m1:.2f}")
+            bot_status["last_signals"].append(f"SELL {symbol} - Confluência Multi-Timeframe")
+
             from bot_engine import executar_ordem
-            sl_price = current_price + 25.0
-            tp_price = current_price - 50.0
-            await executar_ordem(connection, "XAUUSD", "SELL", 0.01, sl=sl_price, tp=tp_price)
-            
-            # Limpa as velas para reiniciar o ciclo de análise
-            bot_status["candles_m5"] = []
+            sl_price = preco_atual + 15.0
+            tp_price = preco_atual - 45.0
+            await executar_ordem(connection, symbol, "SELL", 0.01, sl=sl_price, tp=tp_price)
+
+    else:
+        print("🔍 Sem confluência no momento. O robô rejeitou ordens fora da tendência H1.")
