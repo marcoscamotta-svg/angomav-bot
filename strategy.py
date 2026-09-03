@@ -37,10 +37,26 @@ def analisar_bias_h1(velas_h1):
 
     return bias, suporte, resistencia
 
+def detectar_elliott_waves(velas_m15):
+    """
+    Mapeia a estrutura de Ondas de Elliott no M15 (Contagem simplificada de pivôs 1-2-3-4-5 / ABC).
+    """
+    if len(velas_m15) < 5:
+        return "NEUTRO", "AGUARDANDO_ONDA"
+
+    fechos = [v['close'] for v in velas_m15[-5:]]
+
+    # Estrutura Impulsiva de Alta (Onda 3 ou 5)
+    if fechos[-1] > fechos[-2] and fechos[-3] < fechos[-4] and fechos[-1] > fechos[-3]:
+        return "BULLISH", "ONDA_3_IMPULSO"
+
+    # Estrutura Correutiva ABC (Final de Onda C para Compra)
+    elif fechos[-1] < fechos[-2] and fechos[-2] > fechos[-3] and fechos[-1] < fechos[-4]:
+        return "BEARISH", "ONDA_C_CORRECAO"
+
+    return "NEUTRO", "ONDA_CONSOLIDADA"
+
 def detectar_wyckoff_e_sms(velas, suporte, resistencia):
-    """
-    Identifica Captura de Liquidez (Wyckoff Spring/UTAD) e Mudança de Caráter (CHoCH).
-    """
     if len(velas) < 4:
         return None, None
 
@@ -50,19 +66,13 @@ def detectar_wyckoff_e_sms(velas, suporte, resistencia):
     wyckoff_evento = None
     sms_choch = None
 
-    # Wyckoff Spring: Preço fura o suporte mas fecha acima dele (Varredura de Liquidez de Venda)
     if v_atual['low'] < suporte and v_atual['close'] > suporte:
-        wyckoff_evento = "SPRING (SPRING_LIQUIDITY_SWEEP)"
-
-    # Wyckoff UTAD: Preço fura a resistência mas fecha abaixo dela (Varredura de Liquidez de Compra)
+        wyckoff_evento = "SPRING_SWEEP"
     elif v_atual['high'] > resistencia and v_atual['close'] < resistencia:
-        wyckoff_evento = "UTAD (UTAD_LIQUIDITY_SWEEP)"
+        wyckoff_evento = "UTAD_SWEEP"
 
-    # SMS - CHoCH Bullish (Quebra o topo anterior)
     if v_atual['close'] > v_anterior['high']:
         sms_choch = "BULLISH_CHOCH"
-
-    # SMS - CHoCH Bearish (Quebra o fundo anterior)
     elif v_atual['close'] < v_anterior['low']:
         sms_choch = "BEARISH_CHOCH"
 
@@ -96,52 +106,53 @@ async def analisar_estrategia(connection, bot_status):
 
     HISTORICO_PRECOS.append(preco_atual)
     
-    if len(HISTORICO_PRECOS) > 300:
+    if len(HISTORICO_PRECOS) > 400:
         HISTORICO_PRECOS.pop(0)
 
+    # Reagrupamento dos timeframes: M1 (5 ticks), M15 (30 ticks), H1 (60 ticks)
     velas_m1 = calcular_velas_memoria(HISTORICO_PRECOS, 5)
-    velas_m5 = calcular_velas_memoria(HISTORICO_PRECOS, 15)
-    velas_h1 = calcular_velas_memoria(HISTORICO_PRECOS, 40)
+    velas_m15 = calcular_velas_memoria(HISTORICO_PRECOS, 30)
+    velas_h1 = calcular_velas_memoria(HISTORICO_PRECOS, 60)
 
     if len(velas_m1) < 4:
-        print(f"⏳ A acumular ticks para análise SMC + Wyckoff... Ticks: {len(HISTORICO_PRECOS)}/20")
+        print(f"⏳ A acumular dados para H1 + M15 (Elliott) + M1... Ticks: {len(HISTORICO_PRECOS)}/20")
         return
 
-    # 1. Análise H1 (Bias e Níveis)
+    # 1. Análise H1 (Bias Maior + Suporte/Resistência)
     bias_h1, suporte_h1, resistencia_h1 = analisar_bias_h1(velas_h1)
 
-    # 2. Análise Wyckoff e SMS (M5 e M1)
-    wyckoff_evt, sms_choch = detectar_wyckoff_e_sms(velas_m5, suporte_h1, resistencia_h1)
+    # 2. Análise M15 (Ondas de Elliott + FVG M15)
+    bias_elliott_m15, onda_status = detectar_elliott_waves(velas_m15)
+    fvg_m15, gap_m15 = detectar_fvg(velas_m15)
 
-    # 3. Análise FVG (M5 e M1)
-    fvg_m5, gap_m5 = detectar_fvg(velas_m5)
+    # 3. Análise M1 (Gatilho Wyckoff / CHoCH + FVG M1)
+    wyckoff_evt, sms_choch = detectar_wyckoff_e_sms(velas_m1, suporte_h1, resistencia_h1)
     fvg_m1, gap_m1 = detectar_fvg(velas_m1)
 
     print(f"📊 [H1] Bias: {bias_h1} | Sup: {suporte_h1:.2f} | Res: {resistencia_h1:.2f} | Preço: {preco_atual:.2f}")
-    print(f"🏛️ [WYCKOFF/SMS] Evento: {wyckoff_evt} | CHoCH: {sms_choch}")
-    print(f"🔍 [FVG] M5: {fvg_m5} | M1: {fvg_m1}")
+    print(f"🌊 [M15 ELLIOTT] Estrutura: {bias_elliott_m15} ({onda_status}) | FVG M15: {fvg_m15}")
+    print(f"⚡ [M1 GATILHO] Evento: {wyckoff_evt} | CHoCH: {sms_choch} | FVG M1: {fvg_m1}")
 
     # ---------------------------------------------------------
-    # COMPRA INSTITUCIONAL (BUY): H1 Bullish + Wyckoff Spring/CHoCH + FVG
+    # CONFLUÊNCIA DE COMPRA (BUY): H1 Bullish + M15 Elliott + M1 Gatilho
     # ---------------------------------------------------------
-    if bias_h1 == "BULLISH":
-        if wyckoff_evt == "SPRING (SPRING_LIQUIDITY_SWEEP)" or sms_choch == "BULLISH_CHOCH":
-            if fvg_m5 == "BULLISH" or fvg_m1 == "BULLISH":
-                print("🚀 [SINAL ALTA PRECISÃO] Entrada de Compra SMC + Wyckoff!")
-                bot_status["last_signals"].append("BUY XAUUSD - Wyckoff Spring + CHoCH + FVG")
+    if bias_h1 == "BULLISH" and bias_elliott_m15 == "BULLISH":
+        if fvg_m15 == "BULLISH" or fvg_m1 == "BULLISH":
+            if sms_choch == "BULLISH_CHOCH" or wyckoff_evt == "SPRING_SWEEP":
+                print("🚀 [SINAL PERFEITO] Compra Confluente: H1 + M15 (Elliott) + M1 (CHoCH)!")
+                bot_status["last_signals"].append("BUY XAUUSD - Elliott Wave M15 + CHoCH M1")
                 from bot_engine import executar_ordem
                 await executar_ordem(connection, "XAUUSD", "BUY", 0.01, sl=preco_atual - 15.0, tp=preco_atual + 45.0)
                 HISTORICO_PRECOS.clear()
 
     # ---------------------------------------------------------
-    # VENDA INSTITUCIONAL (SELL): H1 Bearish + Wyckoff UTAD/CHoCH + FVG
+    # CONFLUÊNCIA DE VENDA (SELL): H1 Bearish + M15 Elliott + M1 Gatilho
     # ---------------------------------------------------------
-    elif bias_h1 == "BEARISH":
-        if wyckoff_evt == "UTAD (UTAD_LIQUIDITY_SWEEP)" or sms_choch == "BEARISH_CHOCH":
-            if fvg_m5 == "BEARISH" or fvg_m1 == "BEARISH":
-                print("🚀 [SINAL ALTA PRECISÃO] Entrada de Venda SMC + Wyckoff!")
-                bot_status["last_signals"].append("SELL XAUUSD - Wyckoff UTAD + CHoCH + FVG")
+    elif bias_h1 == "BEARISH" and bias_elliott_m15 == "BEARISH":
+        if fvg_m15 == "BEARISH" or fvg_m1 == "BEARISH":
+            if sms_choch == "BEARISH_CHOCH" or wyckoff_evt == "UTAD_SWEEP":
+                print("🚀 [SINAL PERFEITO] Venda Confluente: H1 + M15 (Elliott) + M1 (CHoCH)!")
+                bot_status["last_signals"].append("SELL XAUUSD - Elliott Wave M15 + CHoCH M1")
                 from bot_engine import executar_ordem
                 await executar_ordem(connection, "XAUUSD", "SELL", 0.01, sl=preco_atual + 15.0, tp=preco_atual - 45.0)
                 HISTORICO_PRECOS.clear()
-
