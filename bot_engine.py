@@ -68,7 +68,8 @@ async def run_trading_bot():
         print("❌ Variaveis META_API_TOKEN ou META_API_ACCOUNT_ID nao foram encontradas!")
         return
 
-    api = MetaApi(TOKEN)
+    # Desativa a subscricao automatica em background para evitar TimeoutException
+    api = MetaApi(TOKEN, {'subscribeToMarketData': False})
 
     while True:
         try:
@@ -76,7 +77,7 @@ async def run_trading_bot():
             connection = account.get_rpc_connection()
             await connection.connect()
             
-            # Sincronização segura sem forçar timeout rígido
+            # Sincronização leve e sem timeout rígido
             try:
                 await connection.wait_synchronized(timeout_in_seconds=15)
             except Exception as sync_err:
