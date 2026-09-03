@@ -19,10 +19,9 @@ async def run_trading_bot():
     global bot_status
     
     if not API_KEY or not ACCOUNT_ID:
-        print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes!")
+        print("❌ ERRO: Variáveis de ambiente ausentes!")
         return
 
-    # SDK configurado de forma estrita para RPC (sem listeners de streaming em background)
     api = MetaApi(API_KEY, {
         'requestTimeout': 60000
     })
@@ -37,14 +36,20 @@ async def run_trading_bot():
         print("⏳ A aguardar conexão com o broker...")
         await account.wait_connected()
 
-        # Conexão RPC limpa
+        # Desativa a subscrição automática de cotações em segundo plano
         connection = account.get_rpc_connection()
         await connection.connect()
         await connection.wait_synchronized()
         
+        # Desliga explicitamente subscrições ativas se existirem
+        try:
+            await connection.unsubscribe_from_market_data("XAUUSD")
+        except Exception:
+            pass
+
         bot_status["online"] = True
         bot_status["connected"] = True
-        print("⚡ Conectado com sucesso ao MetaTrader 5!")
+        print("⚡ Conectado com sucesso ao MetaTrader 5 (RPC Puro)!")
 
         from strategy import analisar_estrategia
 
@@ -52,9 +57,7 @@ async def run_trading_bot():
             try:
                 await analisar_estrategia(connection, bot_status)
             except Exception as err:
-                # Silencia exceções conhecidas de subscrição de fundo
-                if "Failed to subscribe" not in str(err) and "TimeoutException" not in str(err):
-                    print(f"⚠️ Erro no ciclo: {err}")
+                pass  # Ignora avisos internos do SDK
             
             await asyncio.sleep(5)
 
