@@ -75,7 +75,9 @@ async def run_trading_bot():
             account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
             connection = account.get_rpc_connection()
             await connection.connect()
-            await connection.wait_synchronization()
+            
+            # Método corrigido de acordo com a versão atual do SDK
+            await connection.wait_synchronized()
 
             bot_status["connected"] = True
             print("⚡ Conectado com sucesso ao servidor da MetaApi!")
