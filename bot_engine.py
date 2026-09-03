@@ -20,7 +20,7 @@ api = MetaApi(TOKEN) if TOKEN else None
 # FUNÇÕES DE EXECUÇÃO DE TRADES (MT5)
 # ==========================================
 
-async def abrir_posicao(connection, symbol: str, action: str, volume: float, sl: float = None, tp: float = None):
+async def abrir_posicao(connection, symbol, action, volume, sl=None, tp=None):
     """
     Executa ordens de COMPRA (BUY) ou VENDA (SELL) no MT5 via MetaApi.
     """
@@ -42,13 +42,13 @@ async def abrir_posicao(connection, symbol: str, action: str, volume: float, sl:
                 take_profit=tp,
                 options={'comment': 'Angomav SMC Bot'}
             )
-        print(f"✅ [ORDEM] Executada com sucesso! Ticket ID: {res.get('orderId')}")
+        print(f"✅ [ORDEM] Executada com sucesso!")
         return res
     except Exception as e:
         print(f"❌ [ERRO TRADING] Falha ao executar {action}: {e}")
         return None
 
-async def fechar_todas_posicoes(connection, symbol: str = None):
+async def fechar_todas_posicoes(connection, symbol=None):
     """
     Fecha todas as posições abertas ou apenas do símbolo especificado.
     """
@@ -63,7 +63,7 @@ async def fechar_todas_posicoes(connection, symbol: str = None):
         print(f"❌ [ERRO TRADING] Falha ao fechar posições: {e}")
 
 # ==========================================
-# MOTOR DE VARREDURA E ANÁLISE (SMC/WYCKOFF)
+# MOTOR DE VARREDURA E ANÁLISE
 # ==========================================
 
 async def run_trading_bot():
@@ -82,17 +82,10 @@ async def run_trading_bot():
             print("⚡ Conectado com sucesso ao servidor da MetaApi!")
 
             while True:
-                # 1. Atualizar Métricas da Conta
                 account_information = await connection.get_account_information()
                 bot_status["equity"] = account_information.get("equity", 0.0)
                 bot_status["balance"] = account_information.get("balance", 0.0)
                 bot_status["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                # 2. Varredura e Execução
-                # Nota: Integra aqui a tua lógica de sinal/indicador.
-                # Exemplo de chamada de ordem (descomentar quando a condição do teu sinal for atingida):
-                # await abrir_posicao(connection, symbol="EURUSD", action="BUY", volume=0.01, sl=1.0800, tp=1.0900)
-                # await fechar_todas_posicoes(connection, symbol="EURUSD")
 
                 await asyncio.sleep(10)
 
