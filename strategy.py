@@ -3,14 +3,14 @@ from datetime import datetime
 
 async def analisar_estrategia(connection, bot_status):
     """
-    Análise SMC/Elliott + Execução Automática com Proteção contra Símbolo Inválido
+    Análise SMC/Elliott + Execução Automática em XAU/USD (Ouro)
     """
     try:
-        # Se na tua corretora o NASDAQ for USTEC.m, US100 ou NAS100, altera aqui
-        symbol = "USTEC" 
+        # Definido para Ouro (XAUUSD). Se a tua corretora usar sufixo, ajusta aqui (ex: "XAUUSD.m")
+        symbol = "XAUUSD" 
         current_price = 0.0
 
-        # 1. Puxa Preço Atual
+        # 1. Puxa Preço Atual do Ouro
         try:
             price_data = await connection.get_symbol_price(symbol)
             if price_data:
@@ -27,8 +27,9 @@ async def analisar_estrategia(connection, bot_status):
         except Exception:
             pass
 
+        # Preço de fallback caso a cotação inicial falhe
         if current_price == 0.0:
-            current_price = 29119.30
+            current_price = 2500.00
 
         hora_atual = datetime.now().strftime("%H:%M:%S")
 
@@ -36,9 +37,9 @@ async def analisar_estrategia(connection, bot_status):
         bot_status["connected"] = True
         bot_status["last_scan"] = hora_atual
 
-        # 3. Leitura da Estratégia
-        suporte_h1 = round(current_price - 15.0, 2)
-        resistencia_h1 = round(current_price + 15.0, 2)
+        # 3. Leitura da Estratégia SMC / Wyckoff / Elliott para Ouro
+        suporte_h1 = round(current_price - 5.0, 2)
+        resistencia_h1 = round(current_price + 5.0, 2)
         bias_h1 = "BULLISH" if current_price >= suporte_h1 else "BEARISH"
 
         onda_m15 = "ONDA_3_IMPULSO" if bias_h1 == "BULLISH" else "ONDA_C_CORRECAO"
@@ -56,18 +57,19 @@ async def analisar_estrategia(connection, bot_status):
 
         bot_status["last_signals"] = [sinal_objeto]
 
-        # 4. Execução das Ordens
+        # 4. Módulo de Execução de Ordens no Ouro
         try:
             positions = await connection.get_positions()
         except Exception:
             positions = []
 
         if len(positions) == 0:
-            volume = 0.01
+            volume = 0.01  # Lote mínimo recomendado para Ouro
             
+            # GATILHO DE COMPRA (BUY)
             if bias_h1 == "BULLISH" and evento_wyckoff == "SPRING" and choch_m1 == "BULLISH_CHOCH":
-                sl = round(current_price - 20.0, 2)
-                tp = round(current_price + 40.0, 2)
+                sl = round(current_price - 3.0, 2)  # Stop Loss $3.00 abaixo
+                tp = round(current_price + 6.0, 2)  # Take Profit $6.00 acima (RRR 1:2)
                 
                 print(f"🚀 [GATILHO DETETADO] A tentar abrir COMPRA em {symbol} | Lote: {volume}")
                 
@@ -78,13 +80,14 @@ async def analisar_estrategia(connection, bot_status):
                         stop_loss=sl,
                         take_profit=tp
                     )
-                    print(f"✅ Ordem de COMPRA executada: {result}")
+                    print(f"✅ Ordem de COMPRA executada no Ouro: {result}")
                 except Exception as err_order:
                     print(f"⚠️ Erro ao enviar ordem no MetaTrader: {err_order}")
 
+            # GATILHO DE VENDA (SELL)
             elif bias_h1 == "BEARISH" and evento_wyckoff == "UTAD" and choch_m1 == "BEARISH_CHOCH":
-                sl = round(current_price + 20.0, 2)
-                tp = round(current_price - 40.0, 2)
+                sl = round(current_price + 3.0, 2)  # Stop Loss $3.00 acima
+                tp = round(current_price - 6.0, 2)  # Take Profit $6.00 abaixo (RRR 1:2)
                 
                 print(f"🔻 [GATILHO DETETADO] A tentar abrir VENDA em {symbol} | Lote: {volume}")
                 
@@ -95,7 +98,7 @@ async def analisar_estrategia(connection, bot_status):
                         stop_loss=sl,
                         take_profit=tp
                     )
-                    print(f"✅ Ordem de VENDA executada: {result}")
+                    print(f"✅ Ordem de VENDA executada no Ouro: {result}")
                 except Exception as err_order:
                     print(f"⚠️ Erro ao enviar ordem no MetaTrader: {err_order}")
 
