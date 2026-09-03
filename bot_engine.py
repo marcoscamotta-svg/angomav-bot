@@ -4,8 +4,10 @@ import logging
 from datetime import datetime
 from metaapi_cloud_sdk import MetaApi
 
-# Silencia os logs internos de erro do SDK do MetaApi que poluem o Railway
-logging.getLogger("metaapi_cloud_sdk").setLevel(logging.CRITICAL)
+# Força o nivel do logger para CRITICAL para calar o worker interno do WebSocket
+logging.basicConfig(level=logging.ERROR)
+for logger_name in ["metaapi_cloud_sdk", "metaapi_cloud_sdk.sdk"]:
+    logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
 API_KEY = os.getenv("META_API_KEY", "")
 ACCOUNT_ID = os.getenv("META_API_ACCOUNT_ID", "")
@@ -26,7 +28,6 @@ async def run_trading_bot():
         print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes!")
         return
 
-    # Inicializa o SDK limpo (sem passar region no construtor global)
     api = MetaApi(API_KEY, {
         'requestTimeout': 60000
     })
@@ -41,16 +42,12 @@ async def run_trading_bot():
         print("⏳ A aguardar conexão com o broker...")
         await account.wait_connected()
 
-        # Obtém a conexão RPC
+        # Conecta apenas a interface RPC sem sincronizar subscrições de mercado
         connection = account.get_rpc_connection()
         await connection.connect()
+        
+        # Sincroniza sem registar listeners de cotação contínua
         await connection.wait_synchronized()
-
-        # Desativa explicitamente qualquer sincronização automática de streaming/quotes
-        try:
-            await account.unsubscribe()
-        except Exception:
-            pass
 
         bot_status["online"] = True
         bot_status["connected"] = True
