@@ -2,6 +2,7 @@ import os
 import asyncio
 from datetime import datetime
 from metaapi_cloud_sdk import MetaApi
+from strategy import analisar_estrategia
 
 TOKEN = os.environ.get("META_API_TOKEN")
 ACCOUNT_ID = os.environ.get("META_API_ACCOUNT_ID")
@@ -67,7 +68,6 @@ async def run_trading_bot():
         print("❌ Variáveis META_API_TOKEN ou META_API_ACCOUNT_ID não foram encontradas.")
         return
 
-    # Inicializa a API dentro do evento assíncrono para evitar erros de loop no Gunicorn
     api = MetaApi(TOKEN)
 
     while True:
@@ -75,20 +75,25 @@ async def run_trading_bot():
             account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
             connection = account.get_rpc_connection()
             await connection.connect()
-            
-            # Método corrigido de acordo com a versão atual do SDK
             await connection.wait_synchronized()
 
             bot_status["connected"] = True
             print("⚡ Conectado com sucesso ao servidor da MetaApi!")
 
             while True:
+                # 1. Atualiza métricas da conta
                 account_information = await connection.get_account_information()
                 bot_status["equity"] = account_information.get("equity", 0.0)
                 bot_status["balance"] = account_information.get("balance", 0.0)
                 bot_status["last_update"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                await asyncio.sleep(10)
+                # 2. Executa a análise isolada do strategy.py
+                try:
+                    await analisar_estrategia(connection, bot_status)
+                except Exception as strat_err:
+                    print(f"⚠️ Aviso na estratégia: {strat_err}")
+
+                await asyncio.sleep(15)
 
         except Exception as e:
             bot_status["connected"] = False
