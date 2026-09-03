@@ -9,8 +9,8 @@ async def analisar_estrategia(connection, bot_status):
     com risco fixado em 0.5% ($25) para conta de $5.000.
     """
     try:
-        # Busca historico de velas M5 correto no MetaApi RPC
-        candles = await connection.get_historical_candles("XAUUSD", "5m", None, 15)
+        # Busca o historico de velas M5 utilizando a chamada compativel RPC
+        candles = await connection.get_candles("XAUUSD", "5m", None, 15)
         
         if not candles or len(candles) < 3:
             return
