@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 from metaapi_cloud_sdk import MetaApi
 
-# Puxa credenciais das Variáveis de Ambiente do Railway (ou usa os padrões se definidos)
+# Puxa credenciais das Variáveis de Ambiente do Railway
 API_KEY = os.getenv("META_API_KEY", "")
 ACCOUNT_ID = os.getenv("META_API_ACCOUNT_ID", "")
 
@@ -24,8 +24,11 @@ async def run_trading_bot():
         print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes nas variáveis de ambiente!")
         return
 
-    # Instancia a SDK configurando timeout de 30s para evitar erros de sincronização da API
-    api = MetaApi(API_KEY, {'requestTimeout': 30000})
+    # Instancia a SDK definindo a região 'london' e aumentando o timeout para evitar desconexões
+    api = MetaApi(API_KEY, {
+        'region': 'london',
+        'requestTimeout': 30000
+    })
 
     try:
         # Acede à conta no MetaApi
@@ -44,19 +47,19 @@ async def run_trading_bot():
         
         bot_status["online"] = True
         bot_status["connected"] = True
-        print("⚡ Conectado com sucesso ao servidor do MetaApi!")
+        print("⚡ Conectado com sucesso ao servidor do MetaApi (London Region)!")
 
         # Importa o módulo da estratégia
         from strategy import analisar_estrategia
 
-        # Loop principal de análise contínua
+        # Loop principal de análise e execução contínua
         while True:
             try:
                 await analisar_estrategia(connection, bot_status)
             except Exception as err:
                 print(f"⚠️ Erro ao executar ciclo da estratégia: {err}")
             
-            # Intervalo entre varreduras (em segundos)
+            # Intervalo entre varreduras (5 segundos)
             await asyncio.sleep(5)
 
     except Exception as e:
