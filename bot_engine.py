@@ -3,11 +3,9 @@ import asyncio
 from datetime import datetime
 from metaapi_cloud_sdk import MetaApi
 
-# Puxa credenciais das Variáveis de Ambiente do Railway
 API_KEY = os.getenv("META_API_KEY", "")
 ACCOUNT_ID = os.getenv("META_API_ACCOUNT_ID", "")
 
-# Dicionário de estado global consultado pelo servidor web (main.py)
 bot_status = {
     "online": False,
     "connected": False,
@@ -21,47 +19,16 @@ async def run_trading_bot():
     global bot_status
     
     if not API_KEY or not ACCOUNT_ID:
-        print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes nas variáveis de ambiente!")
+        print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes!")
         return
 
-    # Deixa o SDK identificar automaticamente a região da conta sem forçar 'london'
-    api = MetaApi(API_KEY, {
-        'requestTimeout': 60000
-    })
+    api =O erro nos logs indica um problema recorrente de conexão na MetaApi: **`TimeoutException: It seems like the account is not connected to broker yet or SDK settings you use does not match the account region.`**
 
-    try:
-        # Acede à conta no MetaApi
-        account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
-        
-        # Garante que a conta está implantada (DEPLOYED)
-        if account.state != 'DEPLOYED':
-            print("⏳ A aguardar deployment da conta no MetaApi...")
-            await account.deploy()
-            await account.wait_connected()
+O SDK não está conseguindo comunicar com a sua conta no broker dentro do tempo limite. Como resolver diretamente no seu código e na dashboard:
 
-        # Estabelece conexão RPC com a conta do MetaTrader 5
-        connection = account.get_rpc_connection()
-        await connection.connect()
-        await connection.wait_synchronized()
-        
-        bot_status["online"] = True
-        bot_status["connected"] = True
-        print("⚡ Conectado com sucesso ao servidor do MetaApi!")
+**1. Definir a região na inicialização do SDK**
+A MetaApi precisa saber exatamente em qual região a sua conta está alocada (`vint Hill`, `london`, `singapore`, etc.). No seu script onde instancia o `MetaApi`, adicione o parâmetro de região explicitamente ou use a instância da conta:
 
-        # Importa o módulo da estratégia
-        from strategy import analisar_estrategia
-
-        # Loop principal de análise e execução contínua
-        while True:
-            try:
-                await analisar_estrategia(connection, bot_status)
-            except Exception as err:
-                print(f"⚠️ Erro ao executar ciclo da estratégia: {err}")
-            
-            # Intervalo de 5 segundos entre análises
-            await asyncio.sleep(5)
-
-    except Exception as e:
-        print(f"❌ Erro na conexão com o MetaApi: {e}")
-        bot_status["online"] = False
-        bot_status["connected"] = False
+```python
+# Ao instanciar a MetaApi, você pode especificar a região (ou verificar na dashboard da MetaApi qual é a região da sua conta):
+api = MetaApi(token, {'region': 'london'}) # Exemplo: 'london' ou a região configurada na sua conta
