@@ -21,41 +21,40 @@ async def analisar_estrategia(connection, bot_status):
     bot_status["connected"] = True
     bot_status["last_scan"] = horario_atual
 
-    # 1. Tentar obter Saldo e Equity com Timeout de 3s
+    # 1. Obter Saldo e Equity com Timeout
     try:
         account_info = await asyncio.wait_for(connection.get_account_information(), timeout=3.0)
         if account_info:
             bot_status["equity"] = round(account_info.get("equity", 0.0), 2)
             bot_status["balance"] = round(account_info.get("balance", 0.0), 2)
     except Exception as e:
-        print(f"⚠️ [08:33] Timeout/Erro ao obter saldo: {e}")
+        print(f"⚠️ Error account info: {e}")
 
-    # 2. Tentar obter Preço Atual do Ouro com Timeout de 3s
+    # 2. Obter Preço do Ouro com Timeout
     current_price = None
     try:
         price_data = await asyncio.wait_for(connection.get_symbol_price(symbol), timeout=3.0)
         if price_data and "bid" in price_data:
             current_price = price_data["bid"]
     except Exception as e:
-        print(f"⚠️ Timeout/Erro ao obter preço de {symbol}: {e}")
+        print(f"⚠️ Error price data: {e}")
 
-    # Se não obteve preço, preenche o feed informando a tentativa e sai do ciclo
     if not current_price:
         bot_status["last_signals"] = [{
-            "time": horario_atual,
-            "asset": symbol,
-            "price": "A aguardar cotação...",
-            "structure": "A conectar à rede",
-            "status": "Varredura em segundo plano..."
+            "time": horario_atual, "timeframe": horario_atual, "timestamp": horario_atual,
+            "asset": symbol, "symbol": symbol, "ativo": symbol,
+            "price": "Sem cotação", "preco": "Sem cotação",
+            "structure": "A conectar...", "estrutura": "A conectar...", "signal": "A conectar...",
+            "status": "A aguardar dados..."
         }]
         return
 
-    # 3. Histórico de Preços para SMC
+    # 3. Histórico para Análise SMC
     precos_historico.append(current_price)
     if len(precos_historico) > 10:
         precos_historico.pop(0)
 
-    # 4. Estrutura SMC / Wyckoff
+    # 4. Detetar Estrutura SMC / Wyckoff
     fvg_bullish = False
     fvg_bearish = False
     choch_bullish = False
@@ -76,16 +75,29 @@ async def analisar_estrategia(connection, bot_status):
             fvg_bearish = True
             estrutura_texto = "Baixa (CHoCH + FVG Bearish)"
 
-    # 5. Atualização Garantida do Feed de Confluências
+    # 5. Mapeamento Universal de Chaves para o Front-End
     bot_status["last_signals"] = [{
+        # Atributos de Tempo
         "time": horario_atual,
+        "timestamp": horario_atual,
+        "horario": horario_atual,
+        # Atributos do Ativo
         "asset": symbol,
+        "symbol": symbol,
+        "ativo": symbol,
+        # Atributos de Preço
         "price": f"${current_price:.2f}",
+        "preco": f"${current_price:.2f}",
+        # Atributos de Estrutura/Sinal
         "structure": estrutura_texto,
-        "status": "A monitorizar mercado..."
+        "estrutura": estrutura_texto,
+        "signal": estrutura_texto,
+        "confluence": estrutura_texto,
+        # Estado
+        "status": "Monitorização ativa"
     }]
 
-    # 6. Verificar Posições Abertas
+    # 6. Proteção de Posições Abertas
     positions = []
     try:
         positions = await asyncio.wait_for(connection.get_positions(), timeout=3.0)
@@ -93,17 +105,18 @@ async def analisar_estrategia(connection, bot_status):
         pass
 
     if len(positions) >= MAX_POSICOES:
-        bot_status["last_signals"][0]["status"] = "Posição Ativa na Conta (Proteção ON)"
+        for key in ["structure", "estrutura", "signal", "status"]:
+            bot_status["last_signals"][0][key] = "Posição Ativa na Conta"
         return
 
-    # 7. Execução de Ordens (Lote 0.20 | SL/TP 1:1)
+    # 7. Execução de Ordens (Lote 0.20 | R:R 1:1)
     if fvg_bullish and choch_bullish:
         sl = round(current_price - SL_DISTANCIA, 2)
         tp = round(current_price + TP_DISTANCIA, 2)
-        print(f"🚀 COMPRA em {symbol} | Entrada: {current_price} | SL: {sl} | TP: {tp}")
+        print(f"🚀 COMPRA {symbol} | Lote: {LOTE} | Entry: {current_price} | SL: {sl} | TP: {tp}")
         try:
             await connection.create_market_buy_order(symbol=symbol, volume=LOTE, stop_loss=sl, take_profit=tp)
-            bot_status["last_signals"][0]["status"] = f"🚀 COMPRA Executada ({LOTE} lotes)"
+            bot_status["last_signals"][0]["status"] = f"🚀 COMPRA ({LOTE} lotes)"
             precos_historico.clear()
         except Exception as e:
             print(f"⚠️ Erro na compra: {e}")
@@ -111,10 +124,10 @@ async def analisar_estrategia(connection, bot_status):
     elif fvg_bearish and choch_bearish:
         sl = round(current_price + SL_DISTANCIA, 2)
         tp = round(current_price - TP_DISTANCIA, 2)
-        print(f"🔻 VENDA em {symbol} | Entrada: {current_price} | SL: {sl} | TP: {tp}")
+        print(f"🔻 VENDA {symbol} | Lote: {LOTE} | Entry: {current_price} | SL: {sl} | TP: {tp}")
         try:
             await connection.create_market_sell_order(symbol=symbol, volume=LOTE, stop_loss=sl, take_profit=tp)
-            bot_status["last_signals"][0]["status"] = f"🔻 VENDA Executada ({LOTE} lotes)"
+            bot_status["last_signals"][0]["status"] = f"🔻 VENDA ({LOTE} lotes)"
             precos_historico.clear()
         except Exception as e:
             print(f"⚠️ Erro na venda: {e}")
