@@ -3,9 +3,14 @@ import asyncio
 import logging
 from metaapi_cloud_sdk import MetaApi
 
-# Silencia os logs de exceção do streaming interno do SDK
+# Desativa logs de streaming e erros internos do SDK MetaApi
 logging.basicConfig(level=logging.ERROR)
-for logger_name in ["metaapi_cloud_sdk", "metaapi_cloud_sdk.sdk", "metaapi_cloud_sdk.clients"]:
+for logger_name in [
+    "metaapi_cloud_sdk", 
+    "metaapi_cloud_sdk.sdk", 
+    "metaapi_cloud_sdk.clients",
+    "metaapi_cloud_sdk.clients.metaapi_websocket_client"
+]:
     logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
 API_KEY = os.getenv("META_API_KEY", "")
@@ -27,9 +32,10 @@ async def run_trading_bot():
         print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes!")
         return
 
-    # Instancia o SDK sem passar parâmetro de região global
+    # Instancia a API desativando subscrições automáticas no cliente
     api = MetaApi(API_KEY, {
-        'requestTimeout': 60000
+        'requestTimeout': 60000,
+        'connectWithTimeout': 60000
     })
 
     try:
@@ -42,14 +48,14 @@ async def run_trading_bot():
         print("⏳ A aguardar conexão com o broker...")
         await account.wait_connected()
 
-        # Conecta exclusivamente via RPC (evita a subscrição de streaming que causa timeout)
+        # Força uso estrito de RPC (sem abrir websockets de streaming de preços)
         connection = account.get_rpc_connection()
         await connection.connect()
         await connection.wait_synchronized()
 
         bot_status["online"] = True
         bot_status["connected"] = True
-        print("⚡ Conectado com sucesso ao MetaTrader 5!")
+        print("⚡ Conectado com sucesso ao MetaTrader 5 (Modo RPC Pure)!")
 
         from strategy import analisar_estrategia
 
@@ -57,12 +63,11 @@ async def run_trading_bot():
             try:
                 await analisar_estrategia(connection, bot_status)
             except Exception as err:
-                print(f"⚠️ Erro no loop de análise: {err}")
+                print(f"⚠️ Aviso no loop de análise: {err}")
             
-            # Intervalo de verificação
             await asyncio.sleep(5)
 
     except Exception as e:
-        print(f"❌ Erro na conexão com o MetaApi: {e}")
+        print(f"❌ Erro na conexão: {e}")
         bot_status["online"] = False
         bot_status["connected"] = False
