@@ -3,13 +3,14 @@ import asyncio
 import logging
 from metaapi_cloud_sdk import MetaApi
 
-# Desativa logs de streaming e erros internos do SDK MetaApi
+# Desativa logs de streaming e exceções de subscrição em segundo plano
 logging.basicConfig(level=logging.ERROR)
 for logger_name in [
     "metaapi_cloud_sdk", 
     "metaapi_cloud_sdk.sdk", 
     "metaapi_cloud_sdk.clients",
-    "metaapi_cloud_sdk.clients.metaapi_websocket_client"
+    "metaapi_cloud_sdk.clients.metaapi_websocket_client",
+    "metaapi_cloud_sdk.subscription_manager"
 ]:
     logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
@@ -32,10 +33,13 @@ async def run_trading_bot():
         print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes!")
         return
 
-    # Instancia a API desativando subscrições automáticas no cliente
+    # Instancia a API desativando subscrições automáticas para evitar TimeoutException
     api = MetaApi(API_KEY, {
         'requestTimeout': 60000,
-        'connectWithTimeout': 60000
+        'connectWithTimeout': 60000,
+        'subscriptions': {
+            'disabled': True  # Força RPC puro e ignora subscrições de streaming
+        }
     })
 
     try:
@@ -48,7 +52,7 @@ async def run_trading_bot():
         print("⏳ A aguardar conexão com o broker...")
         await account.wait_connected()
 
-        # Força uso estrito de RPC (sem abrir websockets de streaming de preços)
+        # Conexão RPC Direta sem subscrição de mercado
         connection = account.get_rpc_connection()
         await connection.connect()
         await connection.wait_synchronized()
@@ -65,6 +69,7 @@ async def run_trading_bot():
             except Exception as err:
                 print(f"⚠️ Aviso no loop de análise: {err}")
             
+            # Intervalo seguro para não sobrecarregar a taxa de requisições
             await asyncio.sleep(5)
 
     except Exception as e:
