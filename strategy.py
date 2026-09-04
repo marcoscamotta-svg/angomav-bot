@@ -3,9 +3,9 @@ import os
 from datetime import datetime
 
 # ==========================================
-# PARÂMETROS DE GESTÃO - LOTE 0.30 | R:R 1:1
+# PARÂMETROS DE GESTÃO - LOTE 0.20 | R:R 1:1
 # ==========================================
-LOTE = 0.30             # Lote ajustado para 0.30
+LOTE = 0.20             # Lote ajustado para 0.30
 SL_DISTANCIA = 10.0     # $10.0 de Stop Loss no Ouro (XAUUSD)
 TP_DISTANCIA = 10.0     # $10.0 de Take Profit (Risco/Retorno 1:1)
 MAX_POSICOES = 1        # Permite apenas 1 posição aberta por vez
