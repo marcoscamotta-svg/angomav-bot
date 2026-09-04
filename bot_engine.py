@@ -1,12 +1,11 @@
 import os
 import asyncio
 import logging
-from datetime import datetime
 from metaapi_cloud_sdk import MetaApi
 
-# Força o nivel do logger para CRITICAL para calar o worker interno do WebSocket
+# Silencia os logs de exceção do streaming interno do SDK
 logging.basicConfig(level=logging.ERROR)
-for logger_name in ["metaapi_cloud_sdk", "metaapi_cloud_sdk.sdk"]:
+for logger_name in ["metaapi_cloud_sdk", "metaapi_cloud_sdk.sdk", "metaapi_cloud_sdk.clients"]:
     logging.getLogger(logger_name).setLevel(logging.CRITICAL)
 
 API_KEY = os.getenv("META_API_KEY", "")
@@ -28,6 +27,7 @@ async def run_trading_bot():
         print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID ausentes!")
         return
 
+    # Instancia o SDK sem passar parâmetro de região global
     api = MetaApi(API_KEY, {
         'requestTimeout': 60000
     })
@@ -42,11 +42,9 @@ async def run_trading_bot():
         print("⏳ A aguardar conexão com o broker...")
         await account.wait_connected()
 
-        # Conecta apenas a interface RPC sem sincronizar subscrições de mercado
+        # Conecta exclusivamente via RPC (evita a subscrição de streaming que causa timeout)
         connection = account.get_rpc_connection()
         await connection.connect()
-        
-        # Sincroniza sem registar listeners de cotação contínua
         await connection.wait_synchronized()
 
         bot_status["online"] = True
@@ -59,8 +57,9 @@ async def run_trading_bot():
             try:
                 await analisar_estrategia(connection, bot_status)
             except Exception as err:
-                pass
+                print(f"⚠️ Erro no loop de análise: {err}")
             
+            # Intervalo de verificação
             await asyncio.sleep(5)
 
     except Exception as e:
