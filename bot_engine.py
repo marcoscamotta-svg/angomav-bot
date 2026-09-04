@@ -1,7 +1,10 @@
 import os
 import asyncio
-import aiohttp
-from datetime import datetime
+import logging
+from metaapi_cloud_sdk import MetaApi
+
+# Silencia logs de conexão para não poluir o terminal do Railway
+logging.basicConfig(level=logging.ERROR)
 
 API_KEY = os.getenv("META_API_KEY", "")
 ACCOUNT_ID = os.getenv("META_API_ACCOUNT_ID", "")
@@ -15,96 +18,50 @@ bot_status = {
     "last_signals": []
 }
 
-class MetaApiREST:
-    def __init__(self, token, account_id):
-        self.token = token
-        self.account_id = account_id
-        # Endpoint de cliente direto da MetaApi (Região London)
-        self.base_url = f"https://mt-client-api-v1.london.agillictrade.ai/users/current/accounts/{account_id}"
-        self.headers = {
-            "auth-token": token,
-            "content-type": "application/json"
-        }
-
-    async def get_account_information(self):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_url}/account-information", headers=self.headers, timeout=aiohttp.ClientTimeout(total=4)) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-        except Exception as e:
-            print(f"⚠️ Erro ao obter info da conta: {e}")
-        return None
-
-    async def get_symbol_price(self, symbol):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_url}/symbols/{symbol}/current-price", headers=self.headers, timeout=aiohttp.ClientTimeout(total=4)) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-        except Exception as e:
-            print(f"⚠️ Erro ao obter preço do símbolo: {e}")
-        return None
-
-    async def get_positions(self):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_url}/positions", headers=self.headers, timeout=aiohttp.ClientTimeout(total=4)) as resp:
-                    if resp.status == 200:
-                        return await resp.json()
-        except Exception as e:
-            print(f"⚠️ Erro ao obter posições: {e}")
-        return []
-
-    async def create_market_buy_order(self, symbol, volume, stop_loss, take_profit):
-        payload = {
-            "actionType": "ORDER_TYPE_BUY",
-            "symbol": symbol,
-            "volume": volume,
-            "stopLoss": stop_loss,
-            "takeProfit": take_profit
-        }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{self.base_url}/trade", json=payload, headers=self.headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    return await resp.json()
-        except Exception as e:
-            print(f"⚠️ Erro na ordem de compra: {e}")
-            return None
-
-    async def create_market_sell_order(self, symbol, volume, stop_loss, take_profit):
-        payload = {
-            "actionType": "ORDER_TYPE_SELL",
-            "symbol": symbol,
-            "volume": volume,
-            "stopLoss": stop_loss,
-            "takeProfit": take_profit
-        }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(f"{self.base_url}/trade", json=payload, headers=self.headers, timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    return await resp.json()
-        except Exception as e:
-            print(f"⚠️ Erro na ordem de venda: {e}")
-            return None
-
 async def run_trading_bot():
     global bot_status
+
     if not API_KEY or not ACCOUNT_ID:
-        print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID não configurados.")
+        print("❌ ERRO: META_API_KEY ou META_API_ACCOUNT_ID não configurados nas variáveis de ambiente.")
         return
 
-    connection = MetaApiREST(API_KEY, ACCOUNT_ID)
-    bot_status["online"] = True
-    bot_status["connected"] = True
-    print("⚡ Engine iniciada via REST HTTP (Livre de bloqueios/WebSockets)!")
+    # Inicializa o SDK oficial da MetaApi especificando a região 'london' e timeouts maiores
+    api = MetaApi(API_KEY, {
+        "region": "london",
+        "requestTimeout": 30000,
+        "connectWithTimeout": 30000
+    })
 
-    from strategy import analisar_estrategia
+    try:
+        account = await api.metatrader_account_api.get_account(ACCOUNT_ID)
 
-    while True:
-        try:
-            await analisar_estrategia(connection, bot_status)
-        except Exception as e:
-            print(f"⚠️ Erro na varredura da estratégia: {e}")
-        
-        await asyncio.sleep(5)
+        if account.state != "DEPLOYED":
+            print("⏳ A implantar conta na nuvem da MetaApi...")
+            await account.deploy()
+
+        print("⏳ A aguardar sincronização com o broker MetaTrader...")
+        await account.wait_connected()
+
+        # Obtém a conexão RPC para enviar ordens e ler preços
+        connection = account.get_rpc_connection()
+        await connection.connect()
+        await connection.wait_synchronized()
+
+        bot_status["online"] = True
+        bot_status["connected"] = True
+        print("⚡ Conectado com sucesso ao MetaTrader 5 via MetaApi SDK!")
+
+        from strategy import analisar_estrategia
+
+        while True:
+            try:
+                await analisar_estrategia(connection, bot_status)
+            except Exception as e:
+                print(f"⚠️ Erro no loop de varredura: {e}")
+
+            await asyncio.sleep(5)
+
+    except Exception as err:
+        print(f"❌ Erro crítico de conexão: {err}")
+        bot_status["online"] = False
+        bot_status["connected"] = False
